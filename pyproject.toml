@@ -15,7 +15,9 @@ keywords = ["Overcooked", "AI", "Reinforcement Learning"]
 dependencies = [
     "dill",
     "gymnasium",
+    "ipykernel>=6.29.5",
     "ipywidgets",
+    "matplotlib>=3.10.1",
     "numpy<2",
     "opencv-python",
     "pygame",
