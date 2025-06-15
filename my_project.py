@@ -39,16 +39,9 @@ def parse_args():
     parser.add_argument("--epsilon-greedy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use epsilon-greedy")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
     parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
-    # parser.add_argument("--name-weights", type=str, help="name of the experiment's weights")
 
     args = parser.parse_args()
 
-    if args.shared_agent in ["f","F","false","False","FALSE"]:
-        args.shared_agent = False
-    
-    if args.load_weights in ["t","T","true","True","TRUE"]:
-        args.load_weights = True
- 
     return args
 
 
