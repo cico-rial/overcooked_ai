@@ -16,6 +16,7 @@ from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose
 from tensorflow.keras.models import Model
 from tqdm.notebook import tqdm
 from typing import Tuple, List, Dict
+import sys
 import argparse
 import json
 import time
@@ -36,6 +37,7 @@ def parse_args():
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
     parser.add_argument("--lr-t", type=float, default=1e-6, help="learning rate for the actor")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
+    parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
     # parser.add_argument("--name-weights", type=str, help="name of the experiment's weights")
 
     args = parser.parse_args()
@@ -276,6 +278,7 @@ if __name__ == "__main__":
     ALGORITHM = args.algorithm
     SHARED_AGENT = args.shared_agent
     LOAD_WEIGHTS = args.load_weights
+    RUN_ON_COLAB = args.run_on_colab
 
     LR_CRITIC = args.lr_w
     LR_ACTOR = args.lr_t
@@ -304,12 +307,16 @@ if __name__ == "__main__":
     print(f"Learning Rate Critic: {LR_CRITIC}")
     print(f"Learning Rate Actor: {LR_ACTOR}")
     print(f"Loading previous weights: {LOAD_WEIGHTS}")
+    print(f"Running on colab: {RUN_ON_COLAB}")
     print("")
     print(f"Weights will be saved and loaded from the following paths:")
     print(f"Path actor: {PATH_ACTOR}")
     print(f"Path critic: {PATH_CRITIC}")
     print(f"Path second critic: {PATH_SECOND_CRITIC}")
     print("")
+
+    if RUN_ON_COLAB:
+        sys.path.append('/content/overcooked_ai/src')
 
     number_of_frames = 400
     layout_name = "cramped_room"
