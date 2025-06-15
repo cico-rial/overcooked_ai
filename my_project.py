@@ -36,6 +36,7 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor for estimating the future state value")
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
     parser.add_argument("--lr-t", type=float, default=1e-6, help="learning rate for the actor")
+    parser.add_argument("--epsilon-greedy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use epsilon-greedy")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
     parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
     # parser.add_argument("--name-weights", type=str, help="name of the experiment's weights")
@@ -224,7 +225,7 @@ class MyAgent(Agent):
     This class is more a couple of actors since we use shared networks and the output are 2!!!
     For now let's treat it like a single player identified by self.index
     """
-    def __init__(self, actor, old_policy, critic, idx, base_env: OvercookedEnv):
+    def __init__(self, actor, old_policy, critic, idx, base_env: OvercookedEnv, epsilon):
         super().__init__()
         self.actor = actor
         self.old_policy = old_policy
@@ -233,6 +234,7 @@ class MyAgent(Agent):
         if not self.idx in [0,1]:
             raise AssertionError("The index of the agent must be either 0 or 1!")
         self.base_env = base_env
+        self.epsilon = epsilon
         self.update_old_policy()
 
     def action(self, obs):
@@ -250,7 +252,12 @@ class MyAgent(Agent):
             obs = (obs_from_state[0],obs_from_state[1])
 
         action_probs = self.actor.call(obs)[self.idx].numpy()
-        action = Action.sample(np.squeeze(action_probs))
+        
+        if np.random.random() > self.epsilon:
+            action = Action.sample(np.squeeze(action_probs))
+        else:
+            action_idx = np.random.choice(range(0,6), size=1)[0]
+            action = Action.INDEX_TO_ACTION[action_idx] # random exploration
         return (action, {'action_probs': action_probs})
 
     def actions(self, obss):
@@ -288,6 +295,7 @@ if __name__ == "__main__":
     PREV_ACTION_TO_REWARD = args.prev_action
     PREV_ACTION_LIMIT = args.prev_action_limit
     GAMMA = args.gamma
+    EPSILON_GREEDY = args.epsilon_greedy
 
     PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
     PATH_CRITIC = os.path.join("networks","critic", "critic_" + EXP_NAME + ".weights.h5") 
@@ -304,6 +312,7 @@ if __name__ == "__main__":
     print(f"Previous Action to Reward: {PREV_ACTION_TO_REWARD}")
     print(f"Previous Action Limit: {PREV_ACTION_LIMIT}")
     print(f"Gamma: {GAMMA}")
+    print(f"Epsilon Greedy: {EPSILON_GREEDY}")
     print(f"Learning Rate Critic: {LR_CRITIC}")
     print(f"Learning Rate Actor: {LR_ACTOR}")
     print(f"Loading previous weights: {LOAD_WEIGHTS}")
@@ -380,6 +389,11 @@ if __name__ == "__main__":
                 exit("Exiting.")
             print("Overriding weights.")
             print("")
+    
+    if EPSILON_GREEDY:
+        epsilon = 0.1
+    else:
+        epsilon = 0.0
 
     agent_1 = MyAgent(
         actor=actor,
@@ -387,6 +401,7 @@ if __name__ == "__main__":
         critic=critic,
         idx=0,
         base_env=base_env,
+        epsilon=epsilon
     )
     agent_2 = MyAgent(
         actor=actor,
@@ -394,6 +409,7 @@ if __name__ == "__main__":
         critic=second_critic,
         idx=1,
         base_env=base_env,
+        epsilon=epsilon
     )
 
     # loading previous experiment's info
@@ -416,6 +432,7 @@ if __name__ == "__main__":
             "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
             "prev_action_limit": PREV_ACTION_LIMIT, 
             "gamma": GAMMA,
+            "epsilon_greedy": EPSILON_GREEDY,
             "average_reward" : 0,
             "best_avg" : 0,
             "avg_reward_list" : [],
