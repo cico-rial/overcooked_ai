@@ -14,6 +14,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate, BatchNormalization, Activation, Concatenate
 from tensorflow.keras.models import Model
+from scipy.stats import entropy
 from tqdm.notebook import tqdm
 from typing import Tuple, List, Dict
 import sys
@@ -37,6 +38,7 @@ def parse_args():
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
     parser.add_argument("--lr-t", type=float, default=1e-6, help="learning rate for the actor")
     parser.add_argument("--epsilon-greedy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use epsilon-greedy")
+    parser.add_argument("--entropy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use entropy-loss")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
     parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
 
@@ -46,11 +48,12 @@ def parse_args():
 
 
 class Policy(Model):
-    def __init__(self, input_shape, num_actions, optimizer, epsilon = 0.05):
+    def __init__(self, input_shape, num_actions, optimizer, entropy_loss, epsilon = 0.05):
         super().__init__()
         self.input_shape = input_shape
         self.num_actions = num_actions
         self.optimizer = optimizer
+        self.entropy_loss = entropy_loss
         self.epsilon = epsilon
         self.input_a = Input(shape=(self.input_shape))
         self.input_b = Input(shape=(self.input_shape))
@@ -112,9 +115,15 @@ class Policy(Model):
                 deltas_batch = tf.stack((deltas_batch,deltas_batch), axis=1)
             stacked_pi_a = tf.stack((pi_a1,pi_a2), axis=1)
             # Now compute the weighted sum over the batch
-            pi_a = -tf.reduce_sum(deltas_batch*stacked_pi_a)           
+            pi_a = -tf.reduce_sum(deltas_batch*stacked_pi_a)
+            loss = pi_a
+            if self.entropy_loss:
+                entropy_1 = tf.reduce_mean([entropy(pi[0][i].numpy().tolist()) for i in range(len(pi[0]))])
+                entropy_2 = tf.reduce_mean([entropy(pi[1][i].numpy().tolist()) for i in range(len(pi[1]))])
+                entropy_l = (entropy_1.numpy() + entropy_2.numpy())*0.5
+                loss -= entropy_l # minus because we need to maximize the entropy
 
-        grad_pi_a = tape.gradient(pi_a, self.trainable_weights)
+        grad_pi_a = tape.gradient(loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grad_pi_a, self.trainable_weights))
 
     def train_batch_PPO(self, deltas_batch: tf.Tensor, obs_batch, actions_batch, old_policy):
@@ -289,6 +298,7 @@ if __name__ == "__main__":
     PREV_ACTION_LIMIT = args.prev_action_limit
     GAMMA = args.gamma
     EPSILON_GREEDY = args.epsilon_greedy
+    ENTROPY = args.entropy
 
     PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
     PATH_CRITIC = os.path.join("networks","critic", "critic_" + EXP_NAME + ".weights.h5") 
@@ -306,6 +316,7 @@ if __name__ == "__main__":
     print(f"Previous Action Limit: {PREV_ACTION_LIMIT}")
     print(f"Gamma: {GAMMA}")
     print(f"Epsilon Greedy: {EPSILON_GREEDY}")
+    print(f"Entropy Loss: {ENTROPY}")
     print(f"Learning Rate Critic: {LR_CRITIC}")
     print(f"Learning Rate Actor: {LR_ACTOR}")
     print(f"Loading previous weights: {LOAD_WEIGHTS}")
@@ -331,7 +342,8 @@ if __name__ == "__main__":
     actor = Policy(
         input_shape=input_shape,
         num_actions=Action.NUM_ACTIONS,
-        optimizer=Adam(learning_rate=LR_ACTOR)
+        optimizer=Adam(learning_rate=LR_ACTOR),
+        entropy_loss=ENTROPY
         )
 
     critic = ValueFunctionApproximator(
@@ -426,6 +438,7 @@ if __name__ == "__main__":
             "prev_action_limit": PREV_ACTION_LIMIT, 
             "gamma": GAMMA,
             "epsilon_greedy": EPSILON_GREEDY,
+            "entropy_loss": ENTROPY,
             "average_reward" : 0,
             "best_avg" : 0,
             "avg_reward_list" : [],
@@ -479,7 +492,7 @@ if __name__ == "__main__":
                     if total_reward > 0 and episode < PREV_ACTION_LIMIT:
                         if t > PREV_ACTION_TO_REWARD:
                             for i in range(t-1, t-PREV_ACTION_TO_REWARD-1, -1):
-                                rewards[i] += total_reward
+                                rewards[i] += (GAMMA**(t-i))*total_reward
                         else:
                             for i in range(t-1,-1,-1):
                                 rewards[i] += total_reward
@@ -491,7 +504,7 @@ if __name__ == "__main__":
                         if total_reward_1 > 0:
                             if t > PREV_ACTION_TO_REWARD:
                                 for i in range(t-1, t-PREV_ACTION_TO_REWARD-1, -1):
-                                    rewards[i][0] += total_reward_1
+                                    rewards[i][0] += (GAMMA**(t-i))*total_reward_1
                             else:
                                 for i in range(t-1,-1,-1):
                                     rewards[i][0] += total_reward_1
@@ -499,7 +512,7 @@ if __name__ == "__main__":
                         if total_reward_2 > 0:
                             if t > PREV_ACTION_TO_REWARD:
                                 for i in range(t-1, t-PREV_ACTION_TO_REWARD-1, -1):
-                                    rewards[i][1] += total_reward_2
+                                    rewards[i][1] += (GAMMA**(t-i))*total_reward_2
                             else:
                                 for i in range(t-1,-1,-1):
                                     rewards[i][1] += total_reward_2
