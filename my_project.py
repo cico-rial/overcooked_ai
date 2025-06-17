@@ -133,8 +133,8 @@ class Policy(Model):
         with tf.GradientTape() as tape:
             pi = self.call(obs_batch, training=True)
             old_pi = old_policy.call(obs_batch)
-            pi_ratio_1 = pi[0] / old_pi[0] + 1e-8 # to avoid numerical instability
-            pi_ratio_2 = pi[1] / old_pi[1] + 1e-8 # to avoid numerical instability
+            pi_ratio_1 = pi[0] / (old_pi[0] + 1e-8) # to avoid numerical instability
+            pi_ratio_2 = pi[1] / (old_pi[1] + 1e-8) # to avoid numerical instability
             pi_clipped_ratio_1 = tf.clip_by_value(pi_ratio_1, 1 - self.epsilon, 1 + self.epsilon)
             pi_clipped_ratio_2 = tf.clip_by_value(pi_ratio_2, 1 - self.epsilon, 1 + self.epsilon)
             pi_ratio_advantage_1 = pi_ratio_1*deltas_batch[:,:1] # to preserve the second dimension
@@ -389,7 +389,7 @@ if __name__ == "__main__":
         if condition:
             print("")
             print("There exist already weights with this name.")
-            command = input("Do you want to continue anyway? (y/n) ")
+            command = input("Do you want to continue anyway and override them? (y/n) ")
             if "y" not in command:
                 exit("Exiting.")
             print("Overriding weights.")
@@ -549,9 +549,9 @@ if __name__ == "__main__":
             # print(f"agent_1 critic = {agent_1.critic(obs)}")
             # print(f"agent_2 critic = {agent_2.critic(obs)}")
 
-            print(f"Episode [{episode:>3d}] terminated at timestep {t}." 
+            print(f"Episode [{episode:>3d}] terminated at timestep {t}. " 
                 f"cumulative reward: {cumulative_reward:>3d}. avg reward: {round(experiment_info['average_reward'], 3)}. "
-                f"execution time: {round(end_episode - start_episode, 2):>3f} seconds")
+                f"execution time: {round(end_episode - start_episode, 2)} seconds")
             
             print(f"Performing stocastic gradient descent with {NUMBER_OF_EPOCHS} epochs.")
             start_training = time.time()
@@ -574,7 +574,7 @@ if __name__ == "__main__":
                         critic.train_batch(deltas_batch[:,0], observations_batch)
                         second_critic.train_batch(deltas_batch[:,1], observations_batch)
 
-                    actor.train(deltas_batch, observations_batch, actions_batch, old_policy, algorithm=args.algorithm)
+                    actor.train(deltas_batch, observations_batch, actions_batch, old_policy, algorithm=ALGORITHM)
 
                 print(f"Epoch {epoch} terminated.")
 
