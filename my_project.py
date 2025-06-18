@@ -109,33 +109,34 @@ def load_experiment_info():
                 experiment_info = json.load(f)
                 print("Experiment's info successfully loaded.")
                 print("")
+        else:
+            experiment_info = {
+                "exp_name": EXP_NAME, 
+                "seed": SEED, 
+                "algorithm": ALGORITHM, 
+                "shared_agent": SHARED_AGENT, 
+                "load_weights": LOAD_WEIGHTS,
+                "lr_critic": LR_CRITIC, 
+                "lr_actor": LR_ACTOR, 
+                "number_of_episodes": NUMBER_OF_EPISODES, 
+                "number_of_epochs": NUMBER_OF_EPOCHS,
+                "batch_size": BATCH_SIZE, 
+                "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
+                "prev_action_limit": PREV_ACTION_LIMIT, 
+                "gamma": GAMMA,
+                "ppo_epsilon": PPO_EPSILON,
+                "entropy_loss": ENTROPY,
+                "average_reward" : 0,
+                "best_avg" : 0,
+                "avg_reward_list" : [],
+            }
+
     except:
         print(f"Error: unable to load experiment's info.")
         check_if_continue()
         print("Overriding experiment's info.")
         print("")
 
-    else:
-        experiment_info = {
-            "exp_name": EXP_NAME, 
-            "seed": SEED, 
-            "algorithm": ALGORITHM, 
-            "shared_agent": SHARED_AGENT, 
-            "load_weights": LOAD_WEIGHTS,
-            "lr_critic": LR_CRITIC, 
-            "lr_actor": LR_ACTOR, 
-            "number_of_episodes": NUMBER_OF_EPISODES, 
-            "number_of_epochs": NUMBER_OF_EPOCHS,
-            "batch_size": BATCH_SIZE, 
-            "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
-            "prev_action_limit": PREV_ACTION_LIMIT, 
-            "gamma": GAMMA,
-            "ppo_epsilon": PPO_EPSILON,
-            "entropy_loss": ENTROPY,
-            "average_reward" : 0,
-            "best_avg" : 0,
-            "avg_reward_list" : [],
-        }
     return experiment_info
 
 
@@ -477,7 +478,8 @@ if __name__ == "__main__":
     print(f"Weights will be saved and loaded from the following paths:")
     print(f"Path actor: {PATH_ACTOR}")
     print(f"Path critic: {PATH_CRITIC}")
-    print(f"Path second critic: {PATH_SECOND_CRITIC}")
+    if not SHARED_AGENT:
+        print(f"Path second critic: {PATH_SECOND_CRITIC}")
     print("")
 
     set_seed_for_reproducibility(SEED)
