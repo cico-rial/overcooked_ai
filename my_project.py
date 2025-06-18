@@ -27,6 +27,7 @@ import os
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of this experiment")
+    parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
     parser.add_argument("--algorithm", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
     parser.add_argument("--shared-agent", type=lambda x: (str(x).lower() == "true"), default=True, help="whether to use the same agent or not")
     parser.add_argument("--num-episodes", type=int, default=1000, help="number of episodes to train the agent on")
@@ -93,6 +94,7 @@ def load_experiment_info():
     else:
         experiment_info = {
             "exp_name": EXP_NAME, 
+            "seed": SEED, 
             "algorithm": ALGORITHM, 
             "shared_agent": SHARED_AGENT, 
             "load_weights": LOAD_WEIGHTS,
@@ -116,6 +118,29 @@ def load_experiment_info():
 def save_experiment_info(experiment_info):
     with open(PATH_EXPERIMENT_INFO, 'w') as f:
             json.dump(experiment_info, f)
+
+
+def get_old_policy():
+    if ALGORITHM == "ppo":
+        old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
+    else:
+        old_policy = None
+    return old_policy
+
+
+def get_second_critic():
+    if not SHARED_AGENT:
+        second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
+    else:
+        second_critic = critic
+    return second_critic
+
+
+def set_seed_for_reproducibility(SEED):
+    np.random.seed(SEED)
+    tf.random.set_seed(SEED)
+    tf.keras.utils.set_random_seed(SEED)   
+    tf.config.experimental.enable_op_determinism()
 
 
 class Policy(Model):
@@ -364,6 +389,7 @@ if __name__ == "__main__":
 
     # algorithm specifications
     EXP_NAME = args.exp_name
+    SEED = args.seed
     ALGORITHM = args.algorithm
     SHARED_AGENT = args.shared_agent
     LOAD_WEIGHTS = args.load_weights
@@ -394,6 +420,7 @@ if __name__ == "__main__":
     print("")
     print("EXPERIMENT INFO.")
     print(f"Experiment Name: {EXP_NAME}")
+    print(f"Seed: {SEED}")
     print(f"Algorithm: {ALGORITHM}")
     print(f"Shared Agent: {SHARED_AGENT}")
     print(f"Loading previous weights: {LOAD_WEIGHTS}")
@@ -415,6 +442,7 @@ if __name__ == "__main__":
     print(f"Path second critic: {PATH_SECOND_CRITIC}")
     print("")
 
+    set_seed_for_reproducibility(SEED)
 
     number_of_frames = 400
     layout_name = "cramped_room"
@@ -437,15 +465,19 @@ if __name__ == "__main__":
         optimizer=Adam(learning_rate=LR_CRITIC)
         )
     
-    if ALGORITHM == "ppo":
-        old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
-    else:
-        old_policy = None
+    old_policy = get_old_policy()
+
+    second_critic = get_second_critic()
     
-    if not SHARED_AGENT:
-        second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
-    else:
-        second_critic = critic
+    # if ALGORITHM == "ppo":
+    #     old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
+    # else:
+    #     old_policy = None
+    
+    # if not SHARED_AGENT:
+    #     second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
+    # else:
+    #     second_critic = critic
 
     # if LOAD_WEIGHTS:
     #     if SHARED_AGENT:
@@ -627,9 +659,6 @@ if __name__ == "__main__":
             experiment_info["avg_reward_list"].append(round(experiment_info['average_reward'],2))
             
             end_episode = time.time()
-
-            # print(f"agent_1 critic = {agent_1.critic(obs)}")
-            # print(f"agent_2 critic = {agent_2.critic(obs)}")
 
             print(f"Episode [{episode:>3d}] terminated at timestep {t}. " 
                 f"cumulative reward: {cumulative_reward:>3d}. avg reward: {round(experiment_info['average_reward'], 3)}. "
