@@ -37,7 +37,7 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor for estimating the future state value")
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
     parser.add_argument("--lr-t", type=float, default=1e-6, help="learning rate for the actor")
-    parser.add_argument("--epsilon-greedy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use epsilon-greedy")
+    parser.add_argument("--ppo-epsilon", type=float, default=0.05, help="epsilon for clipping in PPO.")
     parser.add_argument("--entropy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use entropy-loss")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
     parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
@@ -45,6 +45,77 @@ def parse_args():
     args = parser.parse_args()
 
     return args
+
+
+def load_weights():
+    if LOAD_WEIGHTS:
+        if SHARED_AGENT:
+            condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC)
+        else:
+            condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC) and os.path.exists(PATH_SECOND_CRITIC)
+
+        if condition:
+            print("")
+            print("Loading previous weights...")
+            print("")
+            actor.load_weights(PATH_ACTOR)
+            critic.load_weights(PATH_CRITIC)
+            if not SHARED_AGENT:
+                second_critic.load_weights(PATH_SECOND_CRITIC)
+        else:
+            print("")
+            print("Previous weights not found.")
+            command = input("Do you want to continue anyway? (y/n) ")
+            if "y" not in command:
+                exit("Exiting.")
+            print("Starting from scratch.")
+            print("")
+    else:
+        condition = os.path.exists(PATH_ACTOR) or os.path.exists(PATH_CRITIC) or os.path.exists(PATH_SECOND_CRITIC)
+
+        if condition:
+            print("")
+            print("There exist already weights with this name.")
+            command = input("Do you want to continue anyway and override them? (y/n) ")
+            if "y" not in command:
+                exit("Exiting.")
+            print("Overriding weights.")
+            print("")
+
+
+def load_experiment_info():
+
+    if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
+        with open(PATH_EXPERIMENT_INFO, 'r') as f:
+            experiment_info = json.load(f)
+            print("Experiment's info loaded.") 
+
+    else:
+        experiment_info = {
+            "exp_name": EXP_NAME, 
+            "algorithm": ALGORITHM, 
+            "shared_agent": SHARED_AGENT, 
+            "load_weights": LOAD_WEIGHTS,
+            "lr_critic": LR_CRITIC, 
+            "lr_actor": LR_ACTOR, 
+            "number_of_episodes": NUMBER_OF_EPISODES, 
+            "number_of_epochs": NUMBER_OF_EPOCHS,
+            "batch_size": BATCH_SIZE, 
+            "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
+            "prev_action_limit": PREV_ACTION_LIMIT, 
+            "gamma": GAMMA,
+            "ppo_epsilon": PPO_EPSILON,
+            "entropy_loss": ENTROPY,
+            "average_reward" : 0,
+            "best_avg" : 0,
+            "avg_reward_list" : [],
+        }
+    return experiment_info
+
+
+def save_experiment_info(experiment_info):
+    with open(PATH_EXPERIMENT_INFO, 'w') as f:
+            json.dump(experiment_info, f)
 
 
 class Policy(Model):
@@ -61,6 +132,9 @@ class Policy(Model):
         self.dense_2 = layers.Dense(256, activation='tanh')
         self.dense_3 = layers.Dense(256, activation='tanh')
         self.dense_4 = layers.Dense(128, activation='tanh')
+        # self.dense_1 = layers.Dense(64, activation='tanh')
+        # self.dense_2 = layers.Dense(128, activation='tanh')
+        # self.dense_3 = layers.Dense(64, activation='tanh')
         self.policy_a = layers.Dense(self.num_actions, activation='softmax', name="policy_a")
         self.policy_b = layers.Dense(self.num_actions, activation='softmax', name="policy_b")
         self.build_model()
@@ -138,14 +212,21 @@ class Policy(Model):
             pi_clipped_ratio_1 = tf.clip_by_value(pi_ratio_1, 1 - self.epsilon, 1 + self.epsilon)
             pi_clipped_ratio_2 = tf.clip_by_value(pi_ratio_2, 1 - self.epsilon, 1 + self.epsilon)
             pi_ratio_advantage_1 = pi_ratio_1*deltas_batch[:,:1] # to preserve the second dimension
+            pi_ratio_advantage_1 = tf.gather(pi_ratio_advantage_1, actions_batch[:, 0], axis=1, batch_dims=1)
             pi_ratio_advantage_2 = pi_ratio_2*deltas_batch[:,1:] # to preserve the second dimension
+            pi_ratio_advantage_2 = tf.gather(pi_ratio_advantage_2, actions_batch[:, 1], axis=1, batch_dims=1)
             pi_clipped_ratio_advantage_1 = pi_clipped_ratio_1*deltas_batch[:,:1] # to preserve the second dimension
+            pi_clipped_ratio_advantage_1 = tf.gather(pi_clipped_ratio_advantage_1, actions_batch[:, 0], axis=1, batch_dims=1)
             pi_clipped_ratio_advantage_2 = pi_clipped_ratio_2*deltas_batch[:,1:] # to preserve the second dimension
-            L = 0
-            for i in range(len(actions_batch)):
-                L += min(pi_ratio_advantage_1[i][actions_batch[i][0]], pi_clipped_ratio_advantage_1[i][actions_batch[i][0]])
-                L += min(pi_ratio_advantage_2[i][actions_batch[i][1]], pi_clipped_ratio_advantage_2[i][actions_batch[i][1]])
-            loss = -L
+            pi_clipped_ratio_advantage_2 = tf.gather(pi_clipped_ratio_advantage_2, actions_batch[:, 1], axis=1, batch_dims=1)
+            min_pi_ratio_1 = tf.minimum(pi_ratio_advantage_1, pi_clipped_ratio_advantage_1)
+            min_pi_ratio_2 = tf.minimum(pi_ratio_advantage_2, pi_clipped_ratio_advantage_2)
+            loss = - tf.reduce_sum(min_pi_ratio_1+min_pi_ratio_2)
+            if self.entropy_loss:
+                entropy_1 = tf.reduce_mean([entropy(pi[0][i].numpy().tolist()) for i in range(len(pi[0]))])
+                entropy_2 = tf.reduce_mean([entropy(pi[1][i].numpy().tolist()) for i in range(len(pi[1]))])
+                entropy_l = (entropy_1.numpy() + entropy_2.numpy())*0.5
+                loss -= entropy_l # minus because we need to maximize the entropy
 
         grad_loss = tape.gradient(loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
@@ -173,6 +254,9 @@ class ValueFunctionApproximator(Model):
         self.dense_2 = layers.Dense(256, activation='tanh')
         self.dense_3 = layers.Dense(256, activation='tanh')
         self.dense_4 = layers.Dense(128, activation='tanh')
+        # self.dense_1 = layers.Dense(64, activation='tanh')
+        # self.dense_2 = layers.Dense(128, activation='tanh')
+        # self.dense_3 = layers.Dense(64, activation='tanh')
         self.value_function = layers.Dense(1, name="value_function")
         self.build_model()
 
@@ -227,7 +311,7 @@ class MyAgent(Agent):
     This class is more a couple of actors since we use shared networks and the output are 2!!!
     For now let's treat it like a single player identified by self.index
     """
-    def __init__(self, actor, old_policy, critic, idx, base_env: OvercookedEnv, epsilon):
+    def __init__(self, actor, old_policy, critic, idx, base_env: OvercookedEnv):
         super().__init__()
         self.actor = actor
         self.old_policy = old_policy
@@ -236,7 +320,6 @@ class MyAgent(Agent):
         if not self.idx in [0,1]:
             raise AssertionError("The index of the agent must be either 0 or 1!")
         self.base_env = base_env
-        self.epsilon = epsilon
         self.update_old_policy()
 
     def action(self, obs):
@@ -254,12 +337,8 @@ class MyAgent(Agent):
             obs = (obs_from_state[0],obs_from_state[1])
 
         action_probs = self.actor.call(obs)[self.idx].numpy()
+        action = Action.sample(np.squeeze(action_probs))
         
-        if np.random.random() > self.epsilon:
-            action = Action.sample(np.squeeze(action_probs))
-        else:
-            action_idx = np.random.choice(range(0,6), size=1)[0]
-            action = Action.INDEX_TO_ACTION[action_idx] # random exploration
         return (action, {'action_probs': action_probs})
 
     def actions(self, obss):
@@ -283,12 +362,15 @@ class MyAgent(Agent):
 if __name__ == "__main__":
     args = parse_args()
 
+    # algorithm specifications
     EXP_NAME = args.exp_name
     ALGORITHM = args.algorithm
     SHARED_AGENT = args.shared_agent
     LOAD_WEIGHTS = args.load_weights
+    ENTROPY = args.entropy
     RUN_ON_COLAB = args.run_on_colab
 
+    # hyperparameters
     LR_CRITIC = args.lr_w
     LR_ACTOR = args.lr_t
     NUMBER_OF_EPISODES = args.num_episodes
@@ -297,30 +379,35 @@ if __name__ == "__main__":
     PREV_ACTION_TO_REWARD = args.prev_action
     PREV_ACTION_LIMIT = args.prev_action_limit
     GAMMA = args.gamma
-    EPSILON_GREEDY = args.epsilon_greedy
-    ENTROPY = args.entropy
+    PPO_EPSILON = args.ppo_epsilon
+    # INSERT PPO EPSILON IF IT WORKS
 
+    # paths for saving and loading weights and info for the experiment
     PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
     PATH_CRITIC = os.path.join("networks","critic", "critic_" + EXP_NAME + ".weights.h5") 
     PATH_SECOND_CRITIC = os.path.join("networks","second_critic", "second_critic_" + EXP_NAME + ".weights.h5")
     PATH_EXPERIMENT_INFO = os.path.join("info", EXP_NAME + ".json") 
 
+    if RUN_ON_COLAB:
+        sys.path.append('/content/overcooked_ai/src') # necessary to view the cloned repo.
+
     print("")
+    print("EXPERIMENT INFO.")
     print(f"Experiment Name: {EXP_NAME}")
     print(f"Algorithm: {ALGORITHM}")
     print(f"Shared Agent: {SHARED_AGENT}")
+    print(f"Loading previous weights: {LOAD_WEIGHTS}")
+    print(f"Entropy Loss: {ENTROPY}")
+    print(f"Running on colab: {RUN_ON_COLAB}")
     print(f"Number of Episodes: {NUMBER_OF_EPISODES}")
     print(f"Number of Epochs: {NUMBER_OF_EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
     print(f"Previous Action to Reward: {PREV_ACTION_TO_REWARD}")
     print(f"Previous Action Limit: {PREV_ACTION_LIMIT}")
     print(f"Gamma: {GAMMA}")
-    print(f"Epsilon Greedy: {EPSILON_GREEDY}")
-    print(f"Entropy Loss: {ENTROPY}")
+    print(f"PPO Epsilon: {PPO_EPSILON}")
     print(f"Learning Rate Critic: {LR_CRITIC}")
     print(f"Learning Rate Actor: {LR_ACTOR}")
-    print(f"Loading previous weights: {LOAD_WEIGHTS}")
-    print(f"Running on colab: {RUN_ON_COLAB}")
     print("")
     print(f"Weights will be saved and loaded from the following paths:")
     print(f"Path actor: {PATH_ACTOR}")
@@ -328,8 +415,6 @@ if __name__ == "__main__":
     print(f"Path second critic: {PATH_SECOND_CRITIC}")
     print("")
 
-    if RUN_ON_COLAB:
-        sys.path.append('/content/overcooked_ai/src')
 
     number_of_frames = 400
     layout_name = "cramped_room"
@@ -343,7 +428,8 @@ if __name__ == "__main__":
         input_shape=input_shape,
         num_actions=Action.NUM_ACTIONS,
         optimizer=Adam(learning_rate=LR_ACTOR),
-        entropy_loss=ENTROPY
+        entropy_loss=ENTROPY,
+        epsilon=PPO_EPSILON
         )
 
     critic = ValueFunctionApproximator(
@@ -352,97 +438,93 @@ if __name__ == "__main__":
         )
     
     if ALGORITHM == "ppo":
-        old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=Adam(learning_rate=LR_ACTOR))
+        old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
     else:
         old_policy = None
     
     if not SHARED_AGENT:
-        second_critic = ValueFunctionApproximator(input_shape=input_shape,optimizer=Adam(learning_rate=LR_CRITIC))
+        second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
     else:
         second_critic = critic
 
-    if LOAD_WEIGHTS:
-        if SHARED_AGENT:
-            condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC)
-        else:
-            condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC) and os.path.exists(PATH_SECOND_CRITIC)
+    # if LOAD_WEIGHTS:
+    #     if SHARED_AGENT:
+    #         condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC)
+    #     else:
+    #         condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC) and os.path.exists(PATH_SECOND_CRITIC)
 
-        if condition:
-            print("")
-            print("Loading previous weights...")
-            print("")
-            actor.load_weights(PATH_ACTOR)
-            critic.load_weights(PATH_CRITIC)
-            if not SHARED_AGENT:
-                second_critic.load_weights(PATH_SECOND_CRITIC)
-        else:
-            print("")
-            print("Previous weights not found.")
-            command = input("Do you want to continue anyway? (y/n) ")
-            if "y" not in command:
-                exit("Exiting.")
-            print("Starting from scratch.")
-            print("")
-    else:
-        condition = os.path.exists(PATH_ACTOR) or os.path.exists(PATH_CRITIC) or os.path.exists(PATH_SECOND_CRITIC)
+    #     if condition:
+    #         print("")
+    #         print("Loading previous weights...")
+    #         print("")
+    #         actor.load_weights(PATH_ACTOR)
+    #         critic.load_weights(PATH_CRITIC)
+    #         if not SHARED_AGENT:
+    #             second_critic.load_weights(PATH_SECOND_CRITIC)
+    #     else:
+    #         print("")
+    #         print("Previous weights not found.")
+    #         command = input("Do you want to continue anyway? (y/n) ")
+    #         if "y" not in command:
+    #             exit("Exiting.")
+    #         print("Starting from scratch.")
+    #         print("")
+    # else:
+    #     condition = os.path.exists(PATH_ACTOR) or os.path.exists(PATH_CRITIC) or os.path.exists(PATH_SECOND_CRITIC)
 
-        if condition:
-            print("")
-            print("There exist already weights with this name.")
-            command = input("Do you want to continue anyway and override them? (y/n) ")
-            if "y" not in command:
-                exit("Exiting.")
-            print("Overriding weights.")
-            print("")
+    #     if condition:
+    #         print("")
+    #         print("There exist already weights with this name.")
+    #         command = input("Do you want to continue anyway and override them? (y/n) ")
+    #         if "y" not in command:
+    #             exit("Exiting.")
+    #         print("Overriding weights.")
+    #         print("")
     
-    if EPSILON_GREEDY:
-        epsilon = 0.1
-    else:
-        epsilon = 0.0
+    load_weights()
 
     agent_1 = MyAgent(
         actor=actor,
         old_policy=old_policy,
         critic=critic,
         idx=0,
-        base_env=base_env,
-        epsilon=epsilon
+        base_env=base_env
     )
     agent_2 = MyAgent(
         actor=actor,
         old_policy=old_policy,
         critic=second_critic,
         idx=1,
-        base_env=base_env,
-        epsilon=epsilon
+        base_env=base_env
     )
 
-    # loading previous experiment's info
-    if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
-        with open(PATH_EXPERIMENT_INFO, 'r') as f:
-            experiment_info = json.load(f)
-            print("Experiment's info loaded.") 
+    # # loading previous experiment's info
+    # if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
+    #     with open(PATH_EXPERIMENT_INFO, 'r') as f:
+    #         experiment_info = json.load(f)
+    #         print("Experiment's info loaded.") 
 
-    else:
-        experiment_info = {
-            "exp_name": EXP_NAME, 
-            "algorithm": ALGORITHM, 
-            "shared_agent": SHARED_AGENT, 
-            "load_weights": LOAD_WEIGHTS,
-            "lr_critic": LR_CRITIC, 
-            "lr_actor": LR_ACTOR, 
-            "number_of_episodes": NUMBER_OF_EPISODES, 
-            "number_of_epochs": NUMBER_OF_EPOCHS,
-            "batch_size": BATCH_SIZE, 
-            "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
-            "prev_action_limit": PREV_ACTION_LIMIT, 
-            "gamma": GAMMA,
-            "epsilon_greedy": EPSILON_GREEDY,
-            "entropy_loss": ENTROPY,
-            "average_reward" : 0,
-            "best_avg" : 0,
-            "avg_reward_list" : [],
-        }
+    # else:
+    #     experiment_info = {
+    #         "exp_name": EXP_NAME, 
+    #         "algorithm": ALGORITHM, 
+    #         "shared_agent": SHARED_AGENT, 
+    #         "load_weights": LOAD_WEIGHTS,
+    #         "lr_critic": LR_CRITIC, 
+    #         "lr_actor": LR_ACTOR, 
+    #         "number_of_episodes": NUMBER_OF_EPISODES, 
+    #         "number_of_epochs": NUMBER_OF_EPOCHS,
+    #         "batch_size": BATCH_SIZE, 
+    #         "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
+    #         "prev_action_limit": PREV_ACTION_LIMIT, 
+    #         "gamma": GAMMA,
+    #         "epsilon_greedy": EPSILON_GREEDY,
+    #         "entropy_loss": ENTROPY,
+    #         "average_reward" : 0,
+    #         "best_avg" : 0,
+    #         "avg_reward_list" : [],
+    #     }
+    experiment_info = load_experiment_info()
         
 
     try:
@@ -591,9 +673,7 @@ if __name__ == "__main__":
                 if not SHARED_AGENT:
                     second_critic.save_weights(PATH_SECOND_CRITIC)
                 print("Weights saved.")
-        
-        # print(f"agent_1 critic = {agent_1.critic(obs)}")
-        # print(f"agent_2 critic = {agent_2.critic(obs)}")
+    
     
     except KeyboardInterrupt:
         print(f"User interrupted the experiment.")
@@ -604,8 +684,10 @@ if __name__ == "__main__":
             second_critic.save_weights(PATH_SECOND_CRITIC)
         
         # saving experiment info
-        with open(PATH_EXPERIMENT_INFO, 'w') as f:
-            json.dump(experiment_info, f)
+        # with open(PATH_EXPERIMENT_INFO, 'w') as f:
+        #     json.dump(experiment_info, f)
+        save_experiment_info(experiment_info)
 
-    with open(PATH_EXPERIMENT_INFO, 'w') as f:
-        json.dump(experiment_info, f)
+    # with open(PATH_EXPERIMENT_INFO, 'w') as f:
+    #     json.dump(experiment_info, f)
+    save_experiment_info(experiment_info)
