@@ -22,6 +22,8 @@ import argparse
 import json
 import time
 import os
+import warnings
+warnings.filterwarnings('ignore')
 
 
 def parse_args():
@@ -48,7 +50,15 @@ def parse_args():
     return args
 
 
+def check_if_continue():
+    command = input("Do you want to continue anyway? (y/n) ")
+    if "y" not in command:
+        exit("Exiting.")
+
+
 def load_weights():
+    global LOAD_WEIGHTS
+    
     if LOAD_WEIGHTS:
         if SHARED_AGENT:
             condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC)
@@ -58,38 +68,52 @@ def load_weights():
         if condition:
             print("")
             print("Loading previous weights...")
-            print("")
-            actor.load_weights(PATH_ACTOR)
-            critic.load_weights(PATH_CRITIC)
-            if not SHARED_AGENT:
-                second_critic.load_weights(PATH_SECOND_CRITIC)
+            try:
+                actor.load_weights(PATH_ACTOR)
+                critic.load_weights(PATH_CRITIC)
+                if not SHARED_AGENT:
+                    second_critic.load_weights(PATH_SECOND_CRITIC)
+                print("Weights successfully loaded.")
+            except:
+                print("Error: loading weights has failed.")
+                check_if_continue()
+                print("Overriding weights.")
+                print("")
+                LOAD_WEIGHTS = False
+            
         else:
             print("")
-            print("Previous weights not found.")
-            command = input("Do you want to continue anyway? (y/n) ")
-            if "y" not in command:
-                exit("Exiting.")
+            print("Warning: previous weights not found.")
+            check_if_continue()
             print("Starting from scratch.")
             print("")
+            LOAD_WEIGHTS = False
     else:
         condition = os.path.exists(PATH_ACTOR) or os.path.exists(PATH_CRITIC) or os.path.exists(PATH_SECOND_CRITIC)
 
         if condition:
             print("")
-            print("There exist already weights with this name.")
-            command = input("Do you want to continue anyway and override them? (y/n) ")
-            if "y" not in command:
-                exit("Exiting.")
+            print("Warning: There exist already weights with this name.")
+            check_if_continue()
             print("Overriding weights.")
             print("")
+            LOAD_WEIGHTS = False
 
 
 def load_experiment_info():
 
-    if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
-        with open(PATH_EXPERIMENT_INFO, 'r') as f:
-            experiment_info = json.load(f)
-            print("Experiment's info loaded.") 
+    try:
+        if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
+            print("Loading previous experiment's info...")
+            with open(PATH_EXPERIMENT_INFO, 'r') as f:
+                experiment_info = json.load(f)
+                print("Experiment's info successfully loaded.")
+                print("")
+    except:
+        print(f"Error: unable to load experiment's info.")
+        check_if_continue()
+        print("Overriding experiment's info.")
+        print("")
 
     else:
         experiment_info = {
@@ -116,8 +140,23 @@ def load_experiment_info():
 
 
 def save_experiment_info(experiment_info):
-    with open(PATH_EXPERIMENT_INFO, 'w') as f:
-            json.dump(experiment_info, f)
+    try:
+        with open(PATH_EXPERIMENT_INFO, 'w') as f:
+                json.dump(experiment_info, f)
+        print("Experiment's info successfully saved.")
+    except:
+        print("Error: unable to save experiment's info.")
+
+
+def save_weights():
+    try:
+        critic.save_weights(PATH_CRITIC)
+        actor.save_weights(PATH_ACTOR)
+        if not SHARED_AGENT:
+            second_critic.save_weights(PATH_SECOND_CRITIC)
+        print("Weights successfully saved.")
+    except:
+        print("Error: unable to save weights.")
 
 
 def get_old_policy():
@@ -383,7 +422,6 @@ class MyAgent(Agent):
             self.old_policy.set_weights(self.actor.get_weights())
 
 
-
 if __name__ == "__main__":
     args = parse_args()
 
@@ -469,50 +507,6 @@ if __name__ == "__main__":
 
     second_critic = get_second_critic()
     
-    # if ALGORITHM == "ppo":
-    #     old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
-    # else:
-    #     old_policy = None
-    
-    # if not SHARED_AGENT:
-    #     second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
-    # else:
-    #     second_critic = critic
-
-    # if LOAD_WEIGHTS:
-    #     if SHARED_AGENT:
-    #         condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC)
-    #     else:
-    #         condition = os.path.exists(PATH_ACTOR) and os.path.exists(PATH_CRITIC) and os.path.exists(PATH_SECOND_CRITIC)
-
-    #     if condition:
-    #         print("")
-    #         print("Loading previous weights...")
-    #         print("")
-    #         actor.load_weights(PATH_ACTOR)
-    #         critic.load_weights(PATH_CRITIC)
-    #         if not SHARED_AGENT:
-    #             second_critic.load_weights(PATH_SECOND_CRITIC)
-    #     else:
-    #         print("")
-    #         print("Previous weights not found.")
-    #         command = input("Do you want to continue anyway? (y/n) ")
-    #         if "y" not in command:
-    #             exit("Exiting.")
-    #         print("Starting from scratch.")
-    #         print("")
-    # else:
-    #     condition = os.path.exists(PATH_ACTOR) or os.path.exists(PATH_CRITIC) or os.path.exists(PATH_SECOND_CRITIC)
-
-    #     if condition:
-    #         print("")
-    #         print("There exist already weights with this name.")
-    #         command = input("Do you want to continue anyway and override them? (y/n) ")
-    #         if "y" not in command:
-    #             exit("Exiting.")
-    #         print("Overriding weights.")
-    #         print("")
-    
     load_weights()
 
     agent_1 = MyAgent(
@@ -530,35 +524,8 @@ if __name__ == "__main__":
         base_env=base_env
     )
 
-    # # loading previous experiment's info
-    # if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
-    #     with open(PATH_EXPERIMENT_INFO, 'r') as f:
-    #         experiment_info = json.load(f)
-    #         print("Experiment's info loaded.") 
-
-    # else:
-    #     experiment_info = {
-    #         "exp_name": EXP_NAME, 
-    #         "algorithm": ALGORITHM, 
-    #         "shared_agent": SHARED_AGENT, 
-    #         "load_weights": LOAD_WEIGHTS,
-    #         "lr_critic": LR_CRITIC, 
-    #         "lr_actor": LR_ACTOR, 
-    #         "number_of_episodes": NUMBER_OF_EPISODES, 
-    #         "number_of_epochs": NUMBER_OF_EPOCHS,
-    #         "batch_size": BATCH_SIZE, 
-    #         "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
-    #         "prev_action_limit": PREV_ACTION_LIMIT, 
-    #         "gamma": GAMMA,
-    #         "epsilon_greedy": EPSILON_GREEDY,
-    #         "entropy_loss": ENTROPY,
-    #         "average_reward" : 0,
-    #         "best_avg" : 0,
-    #         "avg_reward_list" : [],
-    #     }
     experiment_info = load_experiment_info()
         
-
     try:
         for episode in range(1, NUMBER_OF_EPISODES + 1):
             actions = []
@@ -636,7 +603,6 @@ if __name__ == "__main__":
                 # update state (obs = new_obs)
                 obs = new_obs
 
-                # think about training the critic by itself for a while
                 t += 1
             
             critic_values = tf.squeeze(critic.call(observations))
@@ -654,8 +620,8 @@ if __name__ == "__main__":
             deltas = rewards + GAMMA*critic_new_values - critic_values
 
             # experiment_info['average_reward'] = 1/(episode)*( cumulative_reward + (episode-1)*experiment_info['average_reward'])
-            avg_denominator = len(experiment_info["avg_reward_list"]) + 1
-            experiment_info['average_reward'] = 1/(avg_denominator)*( cumulative_reward + (avg_denominator-1)*experiment_info['average_reward'])
+            epsiodes_so_far = len(experiment_info["avg_reward_list"])
+            experiment_info['average_reward'] = 1/(epsiodes_so_far+1)*( cumulative_reward + (epsiodes_so_far)*experiment_info['average_reward'])
             experiment_info["avg_reward_list"].append(round(experiment_info['average_reward'],2))
             
             end_episode = time.time()
@@ -697,26 +663,15 @@ if __name__ == "__main__":
 
             if episode > 20 and experiment_info["average_reward"] > experiment_info["best_avg"]:
                 experiment_info["best_avg"] = experiment_info['average_reward']
-                critic.save_weights(PATH_CRITIC)
-                actor.save_weights(PATH_ACTOR)
-                if not SHARED_AGENT:
-                    second_critic.save_weights(PATH_SECOND_CRITIC)
-                print("Weights saved.")
+                save_weights()
+
+        save_experiment_info(experiment_info)
     
     
     except KeyboardInterrupt:
+        print("")
         print(f"User interrupted the experiment.")
-        print(f"Saving weights and experiment's info.")
-        critic.save_weights(PATH_CRITIC)
-        actor.save_weights(PATH_ACTOR)
-        if not SHARED_AGENT:
-            second_critic.save_weights(PATH_SECOND_CRITIC)
-        
-        # saving experiment info
-        # with open(PATH_EXPERIMENT_INFO, 'w') as f:
-        #     json.dump(experiment_info, f)
+        print(f"Saving weights and experiment's info...")
+        save_weights()
         save_experiment_info(experiment_info)
-
-    # with open(PATH_EXPERIMENT_INFO, 'w') as f:
-    #     json.dump(experiment_info, f)
-    save_experiment_info(experiment_info)
+    
