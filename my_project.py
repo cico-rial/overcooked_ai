@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=20, help="batch size of the training")
     parser.add_argument("--prev-action", type=int, default=5, help="number of actions prior to actual reward. necessary at first")
     parser.add_argument("--prev-action-limit", type=int, default=5000, help="number of actions prior to actual reward. necessary at first")
+    parser.add_argument("--delivery-reward", type=int, default=5, help="reward associated to soup delivery")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor for estimating the future state value")
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
     parser.add_argument("--lr-t", type=float, default=1e-6, help="learning rate for the actor")
@@ -123,12 +124,19 @@ def load_experiment_info():
                 "batch_size": BATCH_SIZE, 
                 "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
                 "prev_action_limit": PREV_ACTION_LIMIT, 
+                "delivery_reward": DELIVERY_REWARD, 
                 "gamma": GAMMA,
                 "ppo_epsilon": PPO_EPSILON,
                 "entropy_loss": ENTROPY,
                 "average_reward" : 0,
                 "best_avg" : 0,
                 "avg_reward_list" : [],
+                "stats" : {"soup_delivery" : [],
+                           "useful_onion_pickup" : [],
+                           "potting_onion" : [],
+                           "useful_dish_pickup": [],
+                           "soup_pickup": []
+                           }
             }
 
     except:
@@ -202,6 +210,7 @@ class Policy(Model):
         # self.dense_3 = layers.Dense(64, activation='tanh')
         self.policy_a = layers.Dense(self.num_actions, activation='softmax', name="policy_a")
         self.policy_b = layers.Dense(self.num_actions, activation='softmax', name="policy_b")
+        # self.printt = True
         self.build_model()
 
     
@@ -256,10 +265,11 @@ class Policy(Model):
             # Now compute the weighted sum over the batch
             pi_a = -tf.reduce_sum(deltas_batch*stacked_pi_a)
             loss = pi_a
+            
             if self.entropy_loss:
-                entropy_1 = tf.reduce_mean([entropy(pi[0][i].numpy().tolist()) for i in range(len(pi[0]))])
-                entropy_2 = tf.reduce_mean([entropy(pi[1][i].numpy().tolist()) for i in range(len(pi[1]))])
-                entropy_l = (entropy_1.numpy() + entropy_2.numpy())*0.5
+                entropy_1 = -tf.reduce_sum(pi[0] * tf.math.log(pi[0] + 1e-8), axis=1)
+                entropy_2 = -tf.reduce_sum(pi[1] * tf.math.log(pi[1] + 1e-8), axis=1)
+                entropy_l = tf.reduce_mean((entropy_1 + entropy_2) / 2)
                 loss -= entropy_l # minus because we need to maximize the entropy
 
         grad_pi_a = tape.gradient(loss, self.trainable_weights)
@@ -287,10 +297,11 @@ class Policy(Model):
             min_pi_ratio_1 = tf.minimum(pi_ratio_advantage_1, pi_clipped_ratio_advantage_1)
             min_pi_ratio_2 = tf.minimum(pi_ratio_advantage_2, pi_clipped_ratio_advantage_2)
             loss = - tf.reduce_sum(min_pi_ratio_1+min_pi_ratio_2)
+
             if self.entropy_loss:
-                entropy_1 = tf.reduce_mean([entropy(pi[0][i].numpy().tolist()) for i in range(len(pi[0]))])
-                entropy_2 = tf.reduce_mean([entropy(pi[1][i].numpy().tolist()) for i in range(len(pi[1]))])
-                entropy_l = (entropy_1.numpy() + entropy_2.numpy())*0.5
+                entropy_1 = -tf.reduce_sum(pi[0] * tf.math.log(pi[0] + 1e-8), axis=1)
+                entropy_2 = -tf.reduce_sum(pi[1] * tf.math.log(pi[1] + 1e-8), axis=1)
+                entropy_l = tf.reduce_mean((entropy_1 + entropy_2) / 2)
                 loss -= entropy_l # minus because we need to maximize the entropy
 
         grad_loss = tape.gradient(loss, self.trainable_weights)
@@ -443,6 +454,7 @@ if __name__ == "__main__":
     BATCH_SIZE = args.batch_size
     PREV_ACTION_TO_REWARD = args.prev_action
     PREV_ACTION_LIMIT = args.prev_action_limit
+    DELIVERY_REWARD = args.delivery_reward
     GAMMA = args.gamma
     PPO_EPSILON = args.ppo_epsilon
     # INSERT PPO EPSILON IF IT WORKS
@@ -470,6 +482,7 @@ if __name__ == "__main__":
     print(f"Batch Size: {BATCH_SIZE}")
     print(f"Previous Action to Reward: {PREV_ACTION_TO_REWARD}")
     print(f"Previous Action Limit: {PREV_ACTION_LIMIT}")
+    print(f"Delivery Reward: {DELIVERY_REWARD}")
     print(f"Gamma: {GAMMA}")
     print(f"PPO Epsilon: {PPO_EPSILON}")
     print(f"Learning Rate Critic: {LR_CRITIC}")
@@ -543,19 +556,22 @@ if __name__ == "__main__":
 
             start_episode = time.time()
 
+            if episode == 1000 and ENTROPY:
+                actor.entropy_loss = False
+
             while not done:
-                action1 = agent_1.action(obs)
-                action2 = agent_2.action(obs)
-                player_1_action = Action.ACTION_TO_INDEX[action1[0]]
-                player_2_action = Action.ACTION_TO_INDEX[action2[0]]
-                action = (player_1_action, player_2_action)
+                action_1_idx = agent_1.action(obs)
+                action_2_idx = agent_2.action(obs)
+                agent_1_action = Action.ACTION_TO_INDEX[action_1_idx[0]]
+                agent_2_action = Action.ACTION_TO_INDEX[action_2_idx[0]]
+                action = (agent_1_action, agent_2_action)
 
                 actions.append(action)
                 observations.append(obs)
 
                 new_obs, reward, done, env_info = env.step(action)
 
-                shaped_reward = sum(env_info['shaped_r_by_agent']) # let's use shaped reward for learning how to play first.
+                shaped_reward = sum(env_info['shaped_r_by_agent']) 
                 shaped_reward_1 = env_info['shaped_r_by_agent'][0] 
                 shaped_reward_2 = env_info['shaped_r_by_agent'][1]
 
@@ -607,6 +623,32 @@ if __name__ == "__main__":
 
                 t += 1
             
+            # getting some stats
+            t_useful_onion_pickup = env_info.get('episode',{}).get('ep_game_stats',{}).get('useful_onion_pickup',[[],[]])
+            useful_onion_pickup = sum([len(agent) for agent in t_useful_onion_pickup])
+
+            t_potting_onion = env_info.get('episode',{}).get('ep_game_stats',{}).get('potting_onion',[[],[]])
+            potting_onion = sum([len(agent) for agent in t_potting_onion])
+
+            t_useful_dish_pickup = env_info.get('episode',{}).get('ep_game_stats',{}).get('useful_dish_pickup',[[],[]])
+            useful_dish_pickup = sum([len(agent) for agent in t_useful_dish_pickup])
+
+            t_soup_pickup = env_info.get('episode',{}).get('ep_game_stats',{}).get('soup_pickup',[[],[]])
+            soup_pickup = sum([len(agent) for agent in t_soup_pickup])
+
+            t_soup_delivery = env_info.get('episode',{}).get('ep_game_stats',{}).get('soup_delivery',[[],[]])
+            soup_delivery = sum([len(agent) for agent in t_soup_delivery])
+
+            # rewarding soup delivery (even if not 3-onions soup)
+            for agent in range(len(t_soup_delivery)):
+                for delivery_timestep in t_soup_delivery[agent]:
+                    for i in range(delivery_timestep, delivery_timestep-PREV_ACTION_TO_REWARD-1, -1):
+                        if SHARED_AGENT:
+                            rewards[i] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
+                        else:
+                            rewards[i][agent] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
+            
+            # computing the deltas all-at-once for efficiency reasons
             critic_values = tf.squeeze(critic.call(observations))
             critic_new_values = tf.squeeze(critic.call(observations[1:])) # it represent the estimation of the next observation
             critic_new_values = tf.concat([critic_new_values, tf.constant([0.0])], axis=0) # the last one is 0
@@ -621,18 +663,24 @@ if __name__ == "__main__":
             
             deltas = rewards + GAMMA*critic_new_values - critic_values
 
-            # experiment_info['average_reward'] = 1/(episode)*( cumulative_reward + (episode-1)*experiment_info['average_reward'])
             epsiodes_so_far = len(experiment_info["avg_reward_list"])
             experiment_info['average_reward'] = 1/(epsiodes_so_far+1)*( cumulative_reward + (epsiodes_so_far)*experiment_info['average_reward'])
             experiment_info["avg_reward_list"].append(round(experiment_info['average_reward'],2))
+            experiment_info["stats"]['useful_onion_pickup'].append(useful_onion_pickup)
+            experiment_info["stats"]['potting_onion'].append(potting_onion)
+            experiment_info["stats"]['useful_dish_pickup'].append(useful_dish_pickup)
+            experiment_info["stats"]['soup_pickup'].append(soup_pickup)
+            experiment_info["stats"]['soup_delivery'].append(soup_delivery)
             
             end_episode = time.time()
 
             print(f"Episode [{episode:>3d}] terminated at timestep {t}. " 
-                f"cumulative reward: {cumulative_reward:>3d}. avg reward: {round(experiment_info['average_reward'], 3)}. "
-                f"execution time: {round(end_episode - start_episode, 2)} seconds")
+                f"cumulative reward: {cumulative_reward:>3d}. "
+                f"avg reward: {round(experiment_info['average_reward'], 2)}. "
+                f"soups delivered: {soup_delivery:>3d}. "
+                f"execution time: {round(end_episode - start_episode, 2)} seconds.")
             
-            print(f"Performing stocastic gradient descent with {NUMBER_OF_EPOCHS} epochs.")
+            # print(f"Performing stocastic gradient descent with {NUMBER_OF_EPOCHS} epochs.")
             start_training = time.time()
             for epoch in range(1, NUMBER_OF_EPOCHS + 1):
                 num_batches = len(actions) // BATCH_SIZE
@@ -655,7 +703,7 @@ if __name__ == "__main__":
 
                     actor.train(deltas_batch, observations_batch, actions_batch, old_policy, algorithm=ALGORITHM)
 
-                print(f"Epoch {epoch} terminated.")
+                # print(f"Epoch {epoch} terminated.")
 
             end_training = time.time()
             print(f"Training ended in {round(end_training - start_training, 2)} seconds")
