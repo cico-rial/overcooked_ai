@@ -358,6 +358,14 @@ class MyAgent(Agent):
 
         action_probs = self.actor.call(obs)[self.idx].numpy()
         action = Action.sample(np.squeeze(action_probs))
+
+        # if np.random.random() > 0.1:
+        #     action = Action.sample(np.squeeze(action_probs))
+        # else:
+        #     action_idx = np.random.choice(range(0,6), size=1)[0]
+        #     action = Action.INDEX_TO_ACTION[action_idx] # random exploration
+
+        
         
         return (action, {'action_probs': action_probs})
 
@@ -387,8 +395,8 @@ if __name__ == "__main__":
     REFRESH_RATE = args.refresh_rate
     SEED = args.seed
 
-    # PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
-    PATH_ACTOR = "networks/actor/shared_actor_best_2.weights.h5" 
+    PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
+    # PATH_ACTOR = "networks/actor/shared_actor_best_3.weights.h5" 
 
     print("")
     print("EXPERIMENT INFO.")
@@ -485,14 +493,6 @@ if __name__ == "__main__":
 
                 episode_sparse_rewards.append(sparse_reward)
                 episode_shaped_rewards.append(total_reward)
-
-
-                # if REWARD_TYPE == "shaped":
-                #     rewards.append(total_reward)
-                #     episode_cumulative_reward += total_reward
-                # elif REWARD_TYPE == "sparse":
-                #     rewards.append(sparse_reward)
-                #     episode_cumulative_reward += sparse_reward
 
                 obs = new_obs
 

@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of this experiment")
     parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
     parser.add_argument("--algorithm", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
+    parser.add_argument("--critic-loss", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
     parser.add_argument("--shared-agent", type=lambda x: (str(x).lower() == "true"), default=True, help="whether to use the same agent or not")
     parser.add_argument("--num-episodes", type=int, default=1000, help="number of episodes to train the agent on")
     parser.add_argument("--num-epochs", type=int, default=2, help="number of epochs to train the agent on")
@@ -308,17 +309,6 @@ class Policy(Model):
         self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
     
 
-    def train(self, deltas_batch: tf.Tensor, obs_batch, actions_batch, old_policy, algorithm='ac'):
-        if algorithm == 'ppo':
-            self.train_batch_PPO(deltas_batch, obs_batch, actions_batch, old_policy)
-
-        elif algorithm == 'ac':
-            self.train_batch(deltas_batch, obs_batch, actions_batch)
-
-        else:
-            raise KeyError("The algorithm can only be 'ac' or 'ppo'.")
-
-
 class ValueFunctionApproximator(Model):
     def __init__(self, input_shape, optimizer):
         super().__init__()
@@ -335,6 +325,7 @@ class ValueFunctionApproximator(Model):
         # self.dense_3 = layers.Dense(64, activation='tanh')
         self.value_function = layers.Dense(1, name="value_function")
         self.build_model()
+        self.printt = True
 
     
     def preprocess(self, obs):
@@ -380,6 +371,13 @@ class ValueFunctionApproximator(Model):
 
         grad_state_value = tape.gradient(processed_state_value, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grad_state_value, self.trainable_weights))
+
+        
+    def train_batch_PPO(self, rewards_batch: tf.Tensor, obs_batch): # deltas is a tf.Tensor of shape (batch_size,1)
+        with tf.GradientTape() as tape:
+            loss = 0.5*(tf.reduce_mean(tf.expand_dims(rewards_batch, axis=1) - self.call(observations_batch)))**2
+        grad_loss = tape.gradient(loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
 
 
 class MyAgent(Agent):
@@ -692,16 +690,27 @@ if __name__ == "__main__":
                         idx = shuffled_indices[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE]
 
                     deltas_batch = tf.gather(deltas, idx)
+                    rewards_batch = tf.gather(tf.constant(rewards, dtype=float), idx)
                     actions_batch = tf.gather(actions, idx)
                     observations_batch = tf.gather(observations, idx)
 
-                    if SHARED_AGENT:
-                        critic.train_batch(deltas_batch, observations_batch)
-                    else:
-                        critic.train_batch(deltas_batch[:,0], observations_batch)
-                        second_critic.train_batch(deltas_batch[:,1], observations_batch)
+                    if ALGORITHM == 'ac':
+                        if SHARED_AGENT:
+                            critic.train_batch(deltas_batch, observations_batch)
+                        else:
+                            critic.train_batch(deltas_batch[:,0], observations_batch)
+                            second_critic.train_batch(deltas_batch[:,1], observations_batch)
 
-                    actor.train(deltas_batch, observations_batch, actions_batch, old_policy, algorithm=ALGORITHM)
+                        actor.train_batch(deltas_batch, observations_batch, actions_batch)
+
+                    elif ALGORITHM == 'ppo':
+                        if SHARED_AGENT:
+                            critic.train_batch_PPO(rewards_batch, observations_batch)
+                        else:
+                            critic.train_batch_PPO(rewards_batch[:,0], observations_batch)
+                            second_critic.train_batch_PPO(rewards_batch[:,1], observations_batch)
+
+                        actor.train_batch_PPO(deltas_batch, observations_batch, actions_batch, old_policy)
 
                 # print(f"Epoch {epoch} terminated.")
 
@@ -721,7 +730,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("")
         print(f"User interrupted the experiment.")
-        print(f"Saving weights and experiment's info...")
-        save_weights()
+        if episode > 20 and experiment_info["average_reward"] > experiment_info["best_avg"]:
+            experiment_info["best_avg"] = experiment_info['average_reward']
+            print(f"Saving weights and experiment's info...")
+            save_weights()
         save_experiment_info(experiment_info)
     
