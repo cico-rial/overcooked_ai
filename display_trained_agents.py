@@ -145,13 +145,13 @@ class Policy(Model):
         self.epsilon = epsilon
         self.input_a = Input(shape=(self.input_shape))
         self.input_b = Input(shape=(self.input_shape))
-        self.dense_1 = layers.Dense(128, activation='tanh')
-        self.dense_2 = layers.Dense(256, activation='tanh')
-        self.dense_3 = layers.Dense(256, activation='tanh')
-        self.dense_4 = layers.Dense(128, activation='tanh')
-        # self.dense_1 = layers.Dense(64, activation='tanh')
-        # self.dense_2 = layers.Dense(128, activation='tanh')
-        # self.dense_3 = layers.Dense(64, activation='tanh')
+        # self.dense_1 = layers.Dense(128, activation='tanh')
+        # self.dense_2 = layers.Dense(256, activation='tanh')
+        # self.dense_3 = layers.Dense(256, activation='tanh')
+        # self.dense_4 = layers.Dense(128, activation='tanh')
+        self.dense_1 = layers.Dense(64, activation='tanh')
+        self.dense_2 = layers.Dense(128, activation='tanh')
+        self.dense_3 = layers.Dense(64, activation='tanh')
         self.policy_a = layers.Dense(self.num_actions, activation='softmax', name="policy_a")
         self.policy_b = layers.Dense(self.num_actions, activation='softmax', name="policy_b")
         # self.printt = True
@@ -172,7 +172,7 @@ class Policy(Model):
         x = self.dense_1(x)
         x = self.dense_2(x)
         x = self.dense_3(x)
-        x = self.dense_4(x)
+        # x = self.dense_4(x)
         policy_a = self.policy_a(x)
         policy_b = self.policy_b(x)
         return (policy_a, policy_b)
@@ -418,27 +418,30 @@ if __name__ == "__main__":
 
     input_shape = env.observation_space._shape
 
-    if os.path.exists(PATH_ACTOR):
+    if EXP_NAME == "random_agent":
+        agent_1 = RandomAgent(all_actions=True)
+        agent_2 = RandomAgent(all_actions=True)
+
+    elif os.path.exists(PATH_ACTOR):
         actor = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS)
         load_weights()
+        agent_1 = MyAgent(
+            actor=actor,
+            old_policy=None,
+            critic=None,
+            idx=0,
+            base_env=base_env
+        )
+        agent_2 = MyAgent(
+            actor=actor,
+            old_policy=None,
+            critic=None,
+            idx=1,
+            base_env=base_env
+        )
     else:
         print(f"Couldn't find actor weights for the following experiment: '{EXP_NAME}'")
         exit("Exiting...")
-
-    agent_1 = MyAgent(
-        actor=actor,
-        old_policy=None,
-        critic=None,
-        idx=0,
-        base_env=base_env
-    )
-    agent_2 = MyAgent(
-        actor=actor,
-        old_policy=None,
-        critic=None,
-        idx=1,
-        base_env=base_env
-    )
 
     cumulative_sparse_rewards = []
     cumulative_shaped_rewards = []

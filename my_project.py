@@ -149,11 +149,12 @@ def load_experiment_info():
     return experiment_info
 
 
-def save_experiment_info(experiment_info):
+def save_experiment_info(experiment_info, last_saved_weights_episode):
+    experiment_info['last_saved_weights_episode'] = last_saved_weights_episode
     try:
         with open(PATH_EXPERIMENT_INFO, 'w') as f:
                 json.dump(experiment_info, f)
-        print("Experiment's info successfully saved.")
+        print(f"Experiment's info successfully saved at {PATH_EXPERIMENT_INFO}.")
     except:
         print("Error: unable to save experiment's info.")
 
@@ -202,13 +203,13 @@ class Policy(Model):
         self.epsilon = epsilon
         self.input_a = Input(shape=(self.input_shape))
         self.input_b = Input(shape=(self.input_shape))
-        self.dense_1 = layers.Dense(128, activation='tanh')
-        self.dense_2 = layers.Dense(256, activation='tanh')
-        self.dense_3 = layers.Dense(256, activation='tanh')
-        self.dense_4 = layers.Dense(128, activation='tanh')
-        # self.dense_1 = layers.Dense(64, activation='tanh')
-        # self.dense_2 = layers.Dense(128, activation='tanh')
-        # self.dense_3 = layers.Dense(64, activation='tanh')
+        # self.dense_1 = layers.Dense(128, activation='tanh')
+        # self.dense_2 = layers.Dense(256, activation='tanh')
+        # self.dense_3 = layers.Dense(256, activation='tanh')
+        # self.dense_4 = layers.Dense(128, activation='tanh')
+        self.dense_1 = layers.Dense(64, activation='tanh')
+        self.dense_2 = layers.Dense(128, activation='tanh')
+        self.dense_3 = layers.Dense(64, activation='tanh')
         self.policy_a = layers.Dense(self.num_actions, activation='softmax', name="policy_a")
         self.policy_b = layers.Dense(self.num_actions, activation='softmax', name="policy_b")
         # self.printt = True
@@ -229,7 +230,7 @@ class Policy(Model):
         x = self.dense_1(x)
         x = self.dense_2(x)
         x = self.dense_3(x)
-        x = self.dense_4(x)
+        # x = self.dense_4(x)
         policy_a = self.policy_a(x)
         policy_b = self.policy_b(x)
         return (policy_a, policy_b)
@@ -316,13 +317,13 @@ class ValueFunctionApproximator(Model):
         self.optimizer = optimizer
         self.input_a = Input(shape=(self.input_shape))
         self.input_b = Input(shape=(self.input_shape))
-        self.dense_1 = layers.Dense(128, activation='tanh')
-        self.dense_2 = layers.Dense(256, activation='tanh')
-        self.dense_3 = layers.Dense(256, activation='tanh')
-        self.dense_4 = layers.Dense(128, activation='tanh')
-        # self.dense_1 = layers.Dense(64, activation='tanh')
-        # self.dense_2 = layers.Dense(128, activation='tanh')
-        # self.dense_3 = layers.Dense(64, activation='tanh')
+        # self.dense_1 = layers.Dense(128, activation='tanh')
+        # self.dense_2 = layers.Dense(256, activation='tanh')
+        # self.dense_3 = layers.Dense(256, activation='tanh')
+        # self.dense_4 = layers.Dense(128, activation='tanh')
+        self.dense_1 = layers.Dense(64, activation='tanh')
+        self.dense_2 = layers.Dense(128, activation='tanh')
+        self.dense_3 = layers.Dense(64, activation='tanh')
         self.value_function = layers.Dense(1, name="value_function")
         self.build_model()
         self.printt = True
@@ -342,7 +343,7 @@ class ValueFunctionApproximator(Model):
         x = self.dense_1(x)
         x = self.dense_2(x)
         x = self.dense_3(x)
-        x = self.dense_4(x)
+        # x = self.dense_4(x)
         value_function = self.value_function(x)
         return value_function
 
@@ -638,13 +639,14 @@ if __name__ == "__main__":
             soup_delivery = sum([len(agent) for agent in t_soup_delivery])
 
             # rewarding soup delivery (even if not 3-onions soup)
-            for agent in range(len(t_soup_delivery)):
-                for delivery_timestep in t_soup_delivery[agent]:
-                    for i in range(delivery_timestep, delivery_timestep-PREV_ACTION_TO_REWARD-1, -1):
-                        if SHARED_AGENT:
-                            rewards[i] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
-                        else:
-                            rewards[i][agent] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
+            if DELIVERY_REWARD > 0:
+                for agent in range(len(t_soup_delivery)):
+                    for delivery_timestep in t_soup_delivery[agent]:
+                        for i in range(delivery_timestep, delivery_timestep-PREV_ACTION_TO_REWARD-1, -1):
+                            if SHARED_AGENT:
+                                rewards[i] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
+                            else:
+                                rewards[i][agent] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
             
             # computing the deltas all-at-once for efficiency reasons
             critic_values = tf.squeeze(critic.call(observations))
@@ -723,6 +725,7 @@ if __name__ == "__main__":
             if episode > 20 and experiment_info["average_reward"] > experiment_info["best_avg"]:
                 experiment_info["best_avg"] = experiment_info['average_reward']
                 save_weights()
+                last_saved_weights_episode = episode
 
         save_experiment_info(experiment_info)
     
@@ -734,5 +737,5 @@ if __name__ == "__main__":
             experiment_info["best_avg"] = experiment_info['average_reward']
             print(f"Saving weights and experiment's info...")
             save_weights()
-        save_experiment_info(experiment_info)
+            save_experiment_info(experiment_info, last_saved_weights_episode)
     
