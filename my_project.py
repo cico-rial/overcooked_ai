@@ -1,21 +1,11 @@
+from utility.utility import set_seed_for_reproducibility, Policy, ValueFunctionApproximator, MyAgent
 from overcooked_ai_py.mdp.overcooked_env import OvercookedEnv, Overcooked
-from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld, OvercookedState
-from overcooked_ai_py.visualization.state_visualizer import StateVisualizer
+from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld
 from overcooked_ai_py.mdp.actions import Action
-from overcooked_ai_py.agents.agent import Agent, AgentPair, RandomAgent
-from overcooked_ai_py.agents.benchmarking import AgentEvaluator
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.datasets import mnist, fashion_mnist
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate, BatchNormalization, Activation, Concatenate
-from tensorflow.keras.models import Model
-from scipy.stats import entropy
-from tqdm.notebook import tqdm
 from typing import Tuple, List, Dict
 import sys
 import argparse
@@ -27,17 +17,21 @@ warnings.filterwarnings('ignore')
 
 
 def parse_args():
+    """
+    Parse command line arguments for the experiment configuration.
+    
+    Returns:
+        args (Namespace): Parsed command line arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of this experiment")
     parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
     parser.add_argument("--algorithm", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
-    parser.add_argument("--critic-loss", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
     parser.add_argument("--shared-agent", type=lambda x: (str(x).lower() == "true"), default=True, help="whether to use the same agent or not")
     parser.add_argument("--num-episodes", type=int, default=1000, help="number of episodes to train the agent on")
     parser.add_argument("--num-epochs", type=int, default=2, help="number of epochs to train the agent on")
     parser.add_argument("--batch-size", type=int, default=20, help="batch size of the training")
     parser.add_argument("--prev-action", type=int, default=5, help="number of actions prior to actual reward. necessary at first")
-    parser.add_argument("--prev-action-limit", type=int, default=5000, help="number of actions prior to actual reward. necessary at first")
     parser.add_argument("--delivery-reward", type=int, default=5, help="reward associated to soup delivery")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor for estimating the future state value")
     parser.add_argument("--lr-w", type=float, default=1e-5, help="learning rate for the critic")
@@ -53,12 +47,19 @@ def parse_args():
 
 
 def check_if_continue():
+    """
+    Check if the user wants to continue the experiment even if there are warnings or errors.
+    """
     command = input("Do you want to continue anyway? (y/n) ")
     if "y" not in command:
         exit("Exiting.")
 
 
 def load_weights():
+    """
+    Load the weights of the neural networks if they exist.
+    If the weights do not exist, it will start from scratch.
+    """
     global LOAD_WEIGHTS
     
     if LOAD_WEIGHTS:
@@ -103,7 +104,12 @@ def load_weights():
 
 
 def load_experiment_info():
+    """
+    Load the experiment's info from a json file or create a new one if it doesn't exist.
 
+    Returns:
+        experiment_info (dict): the experiment's info.
+    """
     try:
         if os.path.exists(PATH_EXPERIMENT_INFO) and LOAD_WEIGHTS:
             print("Loading previous experiment's info...")
@@ -124,7 +130,7 @@ def load_experiment_info():
                 "number_of_epochs": NUMBER_OF_EPOCHS,
                 "batch_size": BATCH_SIZE, 
                 "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
-                "prev_action_limit": PREV_ACTION_LIMIT, 
+                # "prev_action_limit": PREV_ACTION_LIMIT, 
                 "delivery_reward": DELIVERY_REWARD, 
                 "gamma": GAMMA,
                 "ppo_epsilon": PPO_EPSILON,
@@ -149,8 +155,16 @@ def load_experiment_info():
     return experiment_info
 
 
-def save_experiment_info(experiment_info, last_saved_weights_episode):
-    experiment_info['last_saved_weights_episode'] = last_saved_weights_episode
+def save_experiment_info(experiment_info: Dict):
+    """ 
+    Save the experiment's info to a json file.
+    If the file already exists, it will be overwritten.
+
+    Args:
+        experiment_info (dict): the experiment's info to save.
+    Returns:
+        None
+    """
     try:
         with open(PATH_EXPERIMENT_INFO, 'w') as f:
                 json.dump(experiment_info, f)
@@ -160,6 +174,10 @@ def save_experiment_info(experiment_info, last_saved_weights_episode):
 
 
 def save_weights():
+    """
+    Save the weights of the neural networks to a file.
+    If the file already exists, it will be overwritten.
+    """
     try:
         critic.save_weights(PATH_CRITIC)
         actor.save_weights(PATH_ACTOR)
@@ -171,6 +189,12 @@ def save_weights():
 
 
 def get_old_policy():
+    """
+    Get the old policy for PPO training.
+
+    Returns:
+        old_policy (Policy): the old policy to use for PPO training.
+    """
     if ALGORITHM == "ppo":
         old_policy = Policy(input_shape=input_shape, num_actions=Action.NUM_ACTIONS, optimizer=None, entropy_loss=ENTROPY)
     else:
@@ -179,258 +203,18 @@ def get_old_policy():
 
 
 def get_second_critic():
+    """
+    Get the second critic for the second agent.
+    If SHARED_AGENT is True, the critic is shared.
+
+    Returns:
+        second_critic (ValueFunctionApproximator): the second critic to use for the shared agent.
+    """
     if not SHARED_AGENT:
         second_critic = ValueFunctionApproximator(input_shape=input_shape, optimizer=Adam(learning_rate=LR_CRITIC))
     else:
         second_critic = critic
     return second_critic
-
-
-def set_seed_for_reproducibility(SEED):
-    np.random.seed(SEED)
-    tf.random.set_seed(SEED)
-    tf.keras.utils.set_random_seed(SEED)   
-    tf.config.experimental.enable_op_determinism()
-
-
-class Policy(Model):
-    def __init__(self, input_shape, num_actions, optimizer, entropy_loss, epsilon = 0.05):
-        super().__init__()
-        self.input_shape = input_shape
-        self.num_actions = num_actions
-        self.optimizer = optimizer
-        self.entropy_loss = entropy_loss
-        self.epsilon = epsilon
-        self.input_a = Input(shape=(self.input_shape))
-        self.input_b = Input(shape=(self.input_shape))
-        # self.dense_1 = layers.Dense(128, activation='tanh')
-        # self.dense_2 = layers.Dense(256, activation='tanh')
-        # self.dense_3 = layers.Dense(256, activation='tanh')
-        # self.dense_4 = layers.Dense(128, activation='tanh')
-        self.dense_1 = layers.Dense(64, activation='tanh')
-        self.dense_2 = layers.Dense(128, activation='tanh')
-        self.dense_3 = layers.Dense(64, activation='tanh')
-        self.policy_a = layers.Dense(self.num_actions, activation='softmax', name="policy_a")
-        self.policy_b = layers.Dense(self.num_actions, activation='softmax', name="policy_b")
-        # self.printt = True
-        self.build_model()
-
-    
-    def preprocess(self, obs):
-        if isinstance(obs, Tuple):
-            obs = [obs] # to handle the case where obs_batch is a single observation
-
-        obs_1, obs_2 = zip(*obs)
-        obs_batch = tf.concat([tf.stack(obs_1), tf.stack(obs_2)], axis=-1)
-        return obs_batch
-
-
-    def call(self, obs, training=False):
-        x = self.preprocess(obs)
-        x = self.dense_1(x)
-        x = self.dense_2(x)
-        x = self.dense_3(x)
-        # x = self.dense_4(x)
-        policy_a = self.policy_a(x)
-        policy_b = self.policy_b(x)
-        return (policy_a, policy_b)
-
-    def build_model(self):
-        # computing a forward pass in order to automatically build the model
-        dummy_input = (
-            tf.zeros((1, 96)),
-            tf.zeros((1, 96))
-        )
-        _ = self(dummy_input)
-
-    def train_step(self, delta, obs: Tuple, action: Tuple[int,int]):
-        # update t with t + alpha_t*delta*grad_pi^(A|S) where A is the action taken before reaching St+1
-        with tf.GradientTape() as tape:
-            pi = self.call(obs, training=True)
-            log_pi = tf.math.log(pi)
-            pi_a = log_pi[0][..., action[0]] + log_pi[1][..., action[1]] # π(A|S), computing the sum of the probability of the best actions
-
-        grad_pi_a = tape.gradient(pi_a, self.trainable_weights)
-        processed_gradient = [-tf.squeeze(delta)*grad for grad in grad_pi_a]
-        self.optimizer.apply_gradients(zip(processed_gradient, self.trainable_weights))
-    
-    def train_batch(self, deltas_batch: tf.Tensor, obs_batch, actions_batch):
-        # update t with t + alpha_t*delta*grad_pi^(A|S) where A is the action taken before reaching St+1
-        with tf.GradientTape() as tape:
-            pi = self.call(obs_batch, training=True)
-            log_pi = tf.math.log(pi)
-            pi_a1 = tf.gather(log_pi[0], actions_batch[:, 0], axis=1, batch_dims=1)
-            pi_a2 = tf.gather(log_pi[1], actions_batch[:, 1], axis=1, batch_dims=1)
-            if tf.rank(deltas_batch) == 1:
-                deltas_batch = tf.stack((deltas_batch,deltas_batch), axis=1)
-            stacked_pi_a = tf.stack((pi_a1,pi_a2), axis=1)
-            # Now compute the weighted sum over the batch
-            pi_a = -tf.reduce_sum(deltas_batch*stacked_pi_a)
-            loss = pi_a
-            
-            if self.entropy_loss:
-                entropy_1 = -tf.reduce_sum(pi[0] * tf.math.log(pi[0] + 1e-8), axis=1)
-                entropy_2 = -tf.reduce_sum(pi[1] * tf.math.log(pi[1] + 1e-8), axis=1)
-                entropy_l = tf.reduce_mean((entropy_1 + entropy_2) / 2)
-                loss -= entropy_l # minus because we need to maximize the entropy
-
-        grad_pi_a = tape.gradient(loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grad_pi_a, self.trainable_weights))
-
-    def train_batch_PPO(self, deltas_batch: tf.Tensor, obs_batch, actions_batch, old_policy):
-        if tf.rank(deltas_batch) == 1:
-            # in this way i have either 2 identical deltas or specific for each agent.
-            deltas_batch = tf.stack([deltas_batch,deltas_batch], axis=1)
-        with tf.GradientTape() as tape:
-            pi = self.call(obs_batch, training=True)
-            old_pi = old_policy.call(obs_batch)
-            pi_ratio_1 = pi[0] / (old_pi[0] + 1e-8) # to avoid numerical instability
-            pi_ratio_2 = pi[1] / (old_pi[1] + 1e-8) # to avoid numerical instability
-            pi_clipped_ratio_1 = tf.clip_by_value(pi_ratio_1, 1 - self.epsilon, 1 + self.epsilon)
-            pi_clipped_ratio_2 = tf.clip_by_value(pi_ratio_2, 1 - self.epsilon, 1 + self.epsilon)
-            pi_ratio_advantage_1 = pi_ratio_1*deltas_batch[:,:1] # to preserve the second dimension
-            pi_ratio_advantage_1 = tf.gather(pi_ratio_advantage_1, actions_batch[:, 0], axis=1, batch_dims=1)
-            pi_ratio_advantage_2 = pi_ratio_2*deltas_batch[:,1:] # to preserve the second dimension
-            pi_ratio_advantage_2 = tf.gather(pi_ratio_advantage_2, actions_batch[:, 1], axis=1, batch_dims=1)
-            pi_clipped_ratio_advantage_1 = pi_clipped_ratio_1*deltas_batch[:,:1] # to preserve the second dimension
-            pi_clipped_ratio_advantage_1 = tf.gather(pi_clipped_ratio_advantage_1, actions_batch[:, 0], axis=1, batch_dims=1)
-            pi_clipped_ratio_advantage_2 = pi_clipped_ratio_2*deltas_batch[:,1:] # to preserve the second dimension
-            pi_clipped_ratio_advantage_2 = tf.gather(pi_clipped_ratio_advantage_2, actions_batch[:, 1], axis=1, batch_dims=1)
-            min_pi_ratio_1 = tf.minimum(pi_ratio_advantage_1, pi_clipped_ratio_advantage_1)
-            min_pi_ratio_2 = tf.minimum(pi_ratio_advantage_2, pi_clipped_ratio_advantage_2)
-            loss = - tf.reduce_sum(min_pi_ratio_1+min_pi_ratio_2)
-
-            if self.entropy_loss:
-                entropy_1 = -tf.reduce_sum(pi[0] * tf.math.log(pi[0] + 1e-8), axis=1)
-                entropy_2 = -tf.reduce_sum(pi[1] * tf.math.log(pi[1] + 1e-8), axis=1)
-                entropy_l = tf.reduce_mean((entropy_1 + entropy_2) / 2)
-                loss -= entropy_l # minus because we need to maximize the entropy
-
-        grad_loss = tape.gradient(loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
-    
-
-class ValueFunctionApproximator(Model):
-    def __init__(self, input_shape, optimizer):
-        super().__init__()
-        self.input_shape = input_shape
-        self.optimizer = optimizer
-        self.input_a = Input(shape=(self.input_shape))
-        self.input_b = Input(shape=(self.input_shape))
-        # self.dense_1 = layers.Dense(128, activation='tanh')
-        # self.dense_2 = layers.Dense(256, activation='tanh')
-        # self.dense_3 = layers.Dense(256, activation='tanh')
-        # self.dense_4 = layers.Dense(128, activation='tanh')
-        self.dense_1 = layers.Dense(64, activation='tanh')
-        self.dense_2 = layers.Dense(128, activation='tanh')
-        self.dense_3 = layers.Dense(64, activation='tanh')
-        self.value_function = layers.Dense(1, name="value_function")
-        self.build_model()
-        self.printt = True
-
-    
-    def preprocess(self, obs):
-        if isinstance(obs, Tuple):
-            obs = [obs] # to handle the case where obs_batch is a single observation
-
-        obs_1, obs_2 = zip(*obs)
-        obs_batch = tf.concat([tf.stack(obs_1), tf.stack(obs_2)], axis=-1)
-        return obs_batch
-
-
-    def call(self, obs: Tuple, training=False):
-        x = self.preprocess(obs)
-        x = self.dense_1(x)
-        x = self.dense_2(x)
-        x = self.dense_3(x)
-        # x = self.dense_4(x)
-        value_function = self.value_function(x)
-        return value_function
-
-    def build_model(self):
-        # computing a forward pass in order to automatically build the model
-        dummy_input = (
-            tf.zeros((1, 96)),
-            tf.zeros((1, 96))
-        )
-        _ = self(dummy_input)
-
-    def train_step(self, delta, obs: Tuple):
-        # update w with w + alpha_w*delta*grad_v^(St)
-        with tf.GradientTape() as tape:
-            state_value = self.call(obs, training=True)
-
-        grad_state_value = tape.gradient(state_value, self.trainable_weights)
-        processed_gradient = [-tf.squeeze(delta)*grad for grad in grad_state_value]
-        self.optimizer.apply_gradients(zip(processed_gradient, self.trainable_weights))
-
-    def train_batch(self, deltas_batch: tf.Tensor, obs_batch): # deltas is a tf.Tensor of shape (batch_size,1)
-        # update w with w + alpha_w*grad_v^(St)*delta
-        with tf.GradientTape() as tape:
-            state_value = self.call(obs_batch, training=True)
-            processed_state_value = -deltas_batch * state_value
-
-        grad_state_value = tape.gradient(processed_state_value, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grad_state_value, self.trainable_weights))
-
-        
-    def train_batch_PPO(self, rewards_batch: tf.Tensor, obs_batch): # deltas is a tf.Tensor of shape (batch_size,1)
-        with tf.GradientTape() as tape:
-            loss = 0.5*(tf.reduce_mean(tf.expand_dims(rewards_batch, axis=1) - self.call(observations_batch)))**2
-        grad_loss = tape.gradient(loss, self.trainable_weights)
-        self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
-
-
-class MyAgent(Agent):
-    """
-    This class is more a couple of actors since we use shared networks and the output are 2!!!
-    For now let's treat it like a single player identified by self.index
-    """
-    def __init__(self, actor, old_policy, critic, idx, base_env: OvercookedEnv):
-        super().__init__()
-        self.actor = actor
-        self.old_policy = old_policy
-        self.critic = critic
-        self.idx = idx
-        if not self.idx in [0,1]:
-            raise AssertionError("The index of the agent must be either 0 or 1!")
-        self.base_env = base_env
-        self.update_old_policy()
-
-    def action(self, obs):
-        """
-        obs: preprocessed observation (or overcookedstate)
-        We want to output the action given the state. can use a NN!
-        should return a tuple (Action, Dict)
-        Dict should contain info about the action ('action_probs': numpy array)
-        """
-        if isinstance(obs, OvercookedState):
-            # this is useful for translating the OvercookedState
-            # into observation that can be fed into the NN.
-            state = obs
-            obs_from_state = self.base_env.featurize_state_mdp(state)
-            obs = (obs_from_state[0],obs_from_state[1])
-
-        action_probs = self.actor.call(obs)[self.idx].numpy()
-        action = Action.sample(np.squeeze(action_probs))
-        
-        return (action, {'action_probs': action_probs})
-
-    def actions(self, obss):
-        """
-        Look at the documentation of the Agent class
-        """
-        pass
-
-    def update(self, obs, reward):
-        """
-        What do we need to update?
-        """
-        pass
-
-    def update_old_policy(self):
-        if self.old_policy is not None:
-            self.old_policy.set_weights(self.actor.get_weights())
 
 
 if __name__ == "__main__":
@@ -452,11 +236,9 @@ if __name__ == "__main__":
     NUMBER_OF_EPOCHS = args.num_epochs
     BATCH_SIZE = args.batch_size
     PREV_ACTION_TO_REWARD = args.prev_action
-    PREV_ACTION_LIMIT = args.prev_action_limit
     DELIVERY_REWARD = args.delivery_reward
     GAMMA = args.gamma
     PPO_EPSILON = args.ppo_epsilon
-    # INSERT PPO EPSILON IF IT WORKS
 
     # paths for saving and loading weights and info for the experiment
     PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
@@ -480,7 +262,6 @@ if __name__ == "__main__":
     print(f"Number of Epochs: {NUMBER_OF_EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
     print(f"Previous Action to Reward: {PREV_ACTION_TO_REWARD}")
-    print(f"Previous Action Limit: {PREV_ACTION_LIMIT}")
     print(f"Delivery Reward: {DELIVERY_REWARD}")
     print(f"Gamma: {GAMMA}")
     print(f"PPO Epsilon: {PPO_EPSILON}")
@@ -496,14 +277,16 @@ if __name__ == "__main__":
 
     set_seed_for_reproducibility(SEED)
 
+    # initializing the environment
     number_of_frames = 400
     layout_name = "cramped_room"
-    base_mdp = OvercookedGridworld.from_layout_name(layout_name=layout_name) #or other layout
+    base_mdp = OvercookedGridworld.from_layout_name(layout_name=layout_name)
     base_env = OvercookedEnv.from_mdp(base_mdp, info_level=0, horizon=number_of_frames)
     env = Overcooked(base_env=base_env, featurize_fn=base_env.featurize_state_mdp)
 
     input_shape = env.observation_space._shape
 
+    # initializing the actor and critic
     actor = Policy(
         input_shape=input_shape,
         num_actions=Action.NUM_ACTIONS,
@@ -523,6 +306,7 @@ if __name__ == "__main__":
     
     load_weights()
 
+    # creating the agents
     agent_1 = MyAgent(
         actor=actor,
         old_policy=old_policy,
@@ -538,12 +322,15 @@ if __name__ == "__main__":
         base_env=base_env
     )
 
+    # setting up the experiment info
     experiment_info = load_experiment_info()
         
     try:
+        # episode rollout and training
         for episode in range(1, NUMBER_OF_EPISODES + 1):
             actions = []
             observations = []
+            new_observations = []
             rewards = []
 
             t = 0
@@ -551,14 +338,12 @@ if __name__ == "__main__":
             obs = obs['both_agent_obs'] 
             
             done = False
-            cumulative_reward = 0
+            episodic_reward = 0
 
             start_episode = time.time()
 
-            if episode == 1000 and ENTROPY:
-                actor.entropy_loss = False
-
             while not done:
+                # getting the actions from the agents
                 action_1_idx = agent_1.action(obs)
                 action_2_idx = agent_2.action(obs)
                 agent_1_action = Action.ACTION_TO_INDEX[action_1_idx[0]]
@@ -568,13 +353,15 @@ if __name__ == "__main__":
                 actions.append(action)
                 observations.append(obs)
 
+                # performing the action and getting the results
                 new_obs, reward, done, env_info = env.step(action)
 
+                # calculating the rewards
                 shaped_reward = sum(env_info['shaped_r_by_agent']) 
                 shaped_reward_1 = env_info['shaped_r_by_agent'][0] 
                 shaped_reward_2 = env_info['shaped_r_by_agent'][1]
 
-                sparse_reward = reward # the reward is the sparse reward
+                sparse_reward = reward 
                 sparse_reward_1 = env_info['sparse_r_by_agent'][0]
                 sparse_reward_2 = env_info['sparse_r_by_agent'][1]
 
@@ -582,12 +369,14 @@ if __name__ == "__main__":
                 total_reward_1 = shaped_reward_1 + sparse_reward_1
                 total_reward_2 = shaped_reward_2 + sparse_reward_2
 
-                cumulative_reward += total_reward
+                episodic_reward += total_reward
 
                 if SHARED_AGENT:
+                    # appending the sum of the rewards if the critic is shared
                     rewards.append(total_reward)
 
-                    if total_reward > 0 and episode < PREV_ACTION_LIMIT:
+                    # rewarding a successful trajectory of PREV_ACTION_TO_REWARD actions
+                    if PREV_ACTION_TO_REWARD > 0 and total_reward > 0:
                         if t > PREV_ACTION_TO_REWARD:
                             for i in range(t-1, t-PREV_ACTION_TO_REWARD-1, -1):
                                 rewards[i] += (GAMMA**(t-i))*total_reward
@@ -595,10 +384,11 @@ if __name__ == "__main__":
                             for i in range(t-1,-1,-1):
                                 rewards[i] += total_reward
                 else:
+                    # appending the individual rewards if the critic is NOT shared
                     rewards.append([total_reward_1, total_reward_2])
-
-                    if episode < PREV_ACTION_LIMIT:
-
+                    
+                    # rewarding a successful trajectory of PREV_ACTION_TO_REWARD actions
+                    if PREV_ACTION_TO_REWARD > 0:
                         if total_reward_1 > 0:
                             if t > PREV_ACTION_TO_REWARD:
                                 for i in range(t-1, t-PREV_ACTION_TO_REWARD-1, -1):
@@ -616,8 +406,9 @@ if __name__ == "__main__":
                                     rewards[i][1] += total_reward_2
             
                 new_obs = new_obs['both_agent_obs']
+                new_observations.append(new_obs)
 
-                # update state (obs = new_obs)
+                # update state
                 obs = new_obs
 
                 t += 1
@@ -648,24 +439,32 @@ if __name__ == "__main__":
                             else:
                                 rewards[i][agent] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
             
-            # computing the deltas all-at-once for efficiency reasons
+            # computing expected values  
             critic_values = tf.squeeze(critic.call(observations))
-            critic_new_values = tf.squeeze(critic.call(observations[1:])) # it represent the estimation of the next observation
-            critic_new_values = tf.concat([critic_new_values, tf.constant([0.0])], axis=0) # the last one is 0
+            # critic_new_values = tf.squeeze(critic.call(observations[1:])) # it represent the estimation of the next observation
+            critic_new_values = critic_values[1:]
+            critic_new_values = tf.concat([critic_new_values, tf.constant([0.0])], axis=0) # the last expected value is 0
             
             if not SHARED_AGENT:
+                # if the critic is not shared, we compute the expected values also for the second agent
                 second_critic_values = tf.squeeze(second_critic.call(observations))
-                second_critic_new_values = tf.squeeze(second_critic.call(observations[1:])) # it represent the estimation of the next observation
+                # second_critic_new_values = tf.squeeze(second_critic.call(observations[1:])) # it represent the estimation of the next observation
+                second_critic_new_values = second_critic_values[1:]
                 second_critic_new_values = tf.concat([second_critic_new_values, tf.constant([0.0])], axis=0) # the last one is 0
-
+                
+                # stacking the critic values and new values for both agents in a (400,2) tensor
                 critic_values = tf.stack([critic_values,second_critic_values], axis=1)
                 critic_new_values = tf.stack([critic_new_values,second_critic_new_values], axis=1)
             
+            # computing the advantage function
             deltas = rewards + GAMMA*critic_new_values - critic_values
 
+            # computing the average episodic reward achieved so far
             epsiodes_so_far = len(experiment_info["avg_reward_list"])
-            experiment_info['average_reward'] = 1/(epsiodes_so_far+1)*( cumulative_reward + (epsiodes_so_far)*experiment_info['average_reward'])
+            experiment_info['average_reward'] = 1/(epsiodes_so_far+1)*( episodic_reward + (epsiodes_so_far)*experiment_info['average_reward'])
             experiment_info["avg_reward_list"].append(round(experiment_info['average_reward'],2))
+
+            # saving the stats
             experiment_info["stats"]['useful_onion_pickup'].append(useful_onion_pickup)
             experiment_info["stats"]['potting_onion'].append(potting_onion)
             experiment_info["stats"]['useful_dish_pickup'].append(useful_dish_pickup)
@@ -675,18 +474,19 @@ if __name__ == "__main__":
             end_episode = time.time()
 
             print(f"Episode [{episode:>3d}] terminated at timestep {t}. " 
-                f"cumulative reward: {cumulative_reward:>3d}. "
+                f"cumulative reward: {episodic_reward:>3d}. "
                 f"avg reward: {round(experiment_info['average_reward'], 2)}. "
                 f"soups delivered: {soup_delivery:>3d}. "
                 f"execution time: {round(end_episode - start_episode, 2)} seconds.")
             
-            # print(f"Performing stocastic gradient descent with {NUMBER_OF_EPOCHS} epochs.")
+            # performing the training with SGD
             start_training = time.time()
             for epoch in range(1, NUMBER_OF_EPOCHS + 1):
                 num_batches = len(actions) // BATCH_SIZE
                 shuffled_indices = tf.random.shuffle(tf.range(len(actions)))
                 for batch in range(num_batches):
-                    if batch == num_batches: # last batch
+                    if batch == num_batches: 
+                        # last batch we take the remaining elements
                         idx = shuffled_indices[batch*BATCH_SIZE:]
                     else:
                         idx = shuffled_indices[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE]
@@ -695,34 +495,38 @@ if __name__ == "__main__":
                     rewards_batch = tf.gather(tf.constant(rewards, dtype=float), idx)
                     actions_batch = tf.gather(actions, idx)
                     observations_batch = tf.gather(observations, idx)
+                    new_observations_batch = tf.gather(new_observations, idx)
 
                     if ALGORITHM == 'ac':
+                        # training the critic(s)
                         if SHARED_AGENT:
                             critic.train_batch(deltas_batch, observations_batch)
                         else:
                             critic.train_batch(deltas_batch[:,0], observations_batch)
                             second_critic.train_batch(deltas_batch[:,1], observations_batch)
 
+                        # training the actor
                         actor.train_batch(deltas_batch, observations_batch, actions_batch)
 
                     elif ALGORITHM == 'ppo':
+                        # training the critic(s)
                         if SHARED_AGENT:
-                            critic.train_batch_PPO(rewards_batch, observations_batch)
+                            critic.train_batch_PPO(rewards_batch, observations_batch, new_observations_batch, GAMMA)
                         else:
-                            critic.train_batch_PPO(rewards_batch[:,0], observations_batch)
-                            second_critic.train_batch_PPO(rewards_batch[:,1], observations_batch)
+                            critic.train_batch_PPO(rewards_batch[:,0], observations_batch, new_observations_batch, GAMMA)
+                            second_critic.train_batch_PPO(rewards_batch[:,1], observations_batch, new_observations_batch, GAMMA)
 
+                        # training the actor
                         actor.train_batch_PPO(deltas_batch, observations_batch, actions_batch, old_policy)
-
-                # print(f"Epoch {epoch} terminated.")
 
             end_training = time.time()
             print(f"Training ended in {round(end_training - start_training, 2)} seconds")
 
             agent_1.update_old_policy()
-            # agent_2.update_old_policy()
+            # agent_2.update_old_policy() # the old_policy is shared, so we don't need to update it again
 
             if episode > 20 and experiment_info["average_reward"] > experiment_info["best_avg"]:
+                # saving the weights if the average reward is better than the best one so far
                 experiment_info["best_avg"] = experiment_info['average_reward']
                 save_weights()
                 last_saved_weights_episode = episode
@@ -733,9 +537,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("")
         print(f"User interrupted the experiment.")
-        if episode > 20 and experiment_info["average_reward"] > experiment_info["best_avg"]:
-            experiment_info["best_avg"] = experiment_info['average_reward']
-            print(f"Saving weights and experiment's info...")
-            save_weights()
-            save_experiment_info(experiment_info, last_saved_weights_episode)
+        save_experiment_info(experiment_info)
     
+    except Exception as e:
+        print("")
+        print(f"An unexpected error occurred: {e}")
+        save_experiment_info(experiment_info)
