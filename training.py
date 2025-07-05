@@ -26,7 +26,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of this experiment")
     parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
-    parser.add_argument("--algorithm", type=str, default='ac', choices=['ac', 'ppo'], help="the name of the algorithm to use")
+    parser.add_argument("--algorithm", type=str, default='ppo', choices=['ac', 'ppo'], help="the name of the algorithm to use")
     parser.add_argument("--shared-agent", type=lambda x: (str(x).lower() == "true"), default=True, help="whether to use the same agent or not")
     parser.add_argument("--num-episodes", type=int, default=1000, help="number of episodes to train the agent on")
     parser.add_argument("--num-epochs", type=int, default=2, help="number of epochs to train the agent on")
@@ -129,8 +129,7 @@ def load_experiment_info():
                 "number_of_episodes": NUMBER_OF_EPISODES, 
                 "number_of_epochs": NUMBER_OF_EPOCHS,
                 "batch_size": BATCH_SIZE, 
-                "prev_action_to_reward": PREV_ACTION_TO_REWARD, 
-                # "prev_action_limit": PREV_ACTION_LIMIT, 
+                "prev_action_to_reward": PREV_ACTION_TO_REWARD,  
                 "delivery_reward": DELIVERY_REWARD, 
                 "gamma": GAMMA,
                 "ppo_epsilon": PPO_EPSILON,

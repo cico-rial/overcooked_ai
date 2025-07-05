@@ -15,7 +15,7 @@ from typing import Tuple, List, Dict, Union
 
 def visualize_states(states: list[OvercookedState], rewards: list[list], deliveries: list, base_mdp: OvercookedGridworld, refresh_rate=500):
     """
-    NOTE: Heavily adapted from Luca Napoli's code. 
+    NOTE: Heavily adapted from Luca Napoli's shared code. 
 
     Visualizes the trajectory of states in a pygame window.
 
@@ -158,7 +158,7 @@ class Policy(Model):
                 - A tuple of two np.array (first and second agent's observations)
                 - A tf.Tensor of shape (batch_size, 2, input_shape) (for batched input)
         Returns:
-            tf.Tensor: A tensor of shape (batch_size, input_shape * 2) containing the concatenated observations.
+            obs_batch (tf.Tensor): A tensor of shape (batch_size, input_shape * 2) containing the concatenated observations.
         """
         if isinstance(obs, Tuple):
             obs = [obs] # to handle the case where obs_batch is a single observation
@@ -178,7 +178,7 @@ class Policy(Model):
                 - A tf.Tensor of shape (batch_size, 2, input_shape) (for batched input)
             training (bool, optional): Whether the model is in training mode. Defaults to False.
         Returns:
-            Tuple[tf.Tensor, tf.Tensor]: A tuple containing the action probabilities for each agent.
+            policy_a, policy_b (Tuple[tf.Tensor, tf.Tensor]): A tuple containing the action probabilities for each agent.
         """
         x = self.preprocess(obs)
         x = self.dense_1(x)
@@ -301,7 +301,7 @@ class Policy(Model):
                 entropy_1 = -tf.reduce_sum(pi[0] * tf.math.log(pi[0] + 1e-8), axis=1)
                 entropy_2 = -tf.reduce_sum(pi[1] * tf.math.log(pi[1] + 1e-8), axis=1)
                 entropy_l = tf.reduce_mean((entropy_1 + entropy_2) / 2)
-                loss -= entropy_l # minus because we need to maximize the entropy
+                loss -= entropy_l # negative because we need to maximize the entropy
 
         grad_loss = tape.gradient(loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grad_loss, self.trainable_weights))
@@ -341,7 +341,7 @@ class ValueFunctionApproximator(Model):
                 - A tuple of two np.array (first and second agent's observations)
                 - A tf.Tensor of shape (batch_size, 2, input_shape) (for batched input)
         Returns:
-            tf.Tensor: A tensor of shape (batch_size, input_shape * 2) containing the concatenated observations.
+            obs_batch (tf.Tensor): A tensor of shape (batch_size, input_shape * 2) containing the concatenated observations.
         """
         if isinstance(obs, Tuple):
             obs = [obs] # to handle the case where obs_batch is a single observation
@@ -361,7 +361,7 @@ class ValueFunctionApproximator(Model):
                 - A tf.Tensor of shape (batch_size, 2, input_shape) (for batched input)
             training (bool, optional): Whether the model is in training mode. Defaults to False.
         Returns:
-            tf.Tensor: A tensor of shape (batch_size, 1) containing the state value function for the agent(s).
+            value_function (tf.Tensor): A tensor of shape (batch_size, 1) containing the state value function for the agent(s).
         """
         x = self.preprocess(obs)
         x = self.dense_1(x)
@@ -471,9 +471,9 @@ class MyAgent(Agent):
             obs (Tuple(np.array,np.array) | OvercookedState): The observation of the environment. 
                 Can be a tuple of two numpy arrays (one for each agent) or the OvercookedState object.
         Returns:
-            Tuple[Action, Dict]: A tuple containing the action to take and a dictionary with action probabilities.
-                The action is an instance of Action sampled from the policy network.
-                The dictionary contains the action probabilities.
+            action, {'action_probs' : action_probs} (Tuple[Action, Dict]): A tuple containing the action 
+            to take and a dictionary with action probabilities. The action is an instance of Action sampled 
+            from the policy network. The dictionary contains the action probabilities.
         """
         if isinstance(obs, OvercookedState):
             state = obs
