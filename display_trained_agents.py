@@ -36,7 +36,7 @@ def parse_args():
     """
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of this experiment. weights will be loaded from it")
+    parser.add_argument("--exp-name", type=str, default="dummy_experiment", help="the name of the experiment from which weights will be loaded")
     parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
     parser.add_argument("--num-episodes", type=int, default=10, help="number of episodes for which to compute the average reward")
     parser.add_argument("--refresh-rate", type=int, default=250, help="refresh-rate for displaying the episode")
