@@ -23,10 +23,24 @@ Clone the repo
 git clone https://github.com/cico/overcooked_ai.git
 ```
 
-Using uv (recommended):
+Create venv using uv (necessary for compatibility)
 ```
 uv venv
+```
+
+Install the dependencies
+```
 uv sync
+```
+
+Install tensorflow through **uv pip**(couldn't be possible to add it to the dependencies)
+```
+uv pip install tensorflow
+```
+
+Activate the virtual environment
+```
+.venv\Scripts\activate
 ```
 
 ## Code Structure Overview 🗺
