@@ -65,7 +65,7 @@ To set specific hyperparameters, you can specify the following options:
 usage: training.py [-h] [--exp-name EXP_NAME] [--seed SEED] [--algorithm {ac,ppo}] [--shared-agent SHARED_AGENT] [--num-episodes NUM_EPISODES]
                    [--num-epochs NUM_EPOCHS] [--batch-size BATCH_SIZE] [--prev-action PREV_ACTION] [--delivery-reward DELIVERY_REWARD]
                    [--gamma GAMMA] [--lr-w LR_W] [--lr-t LR_T] [--ppo-epsilon PPO_EPSILON] [--entropy ENTROPY] [--load-weights LOAD_WEIGHTS]
-                   [--run-on-colab RUN_ON_COLAB]
+                   [--run-on-unix-like RUN_ON_UNIX_LIKE]
 
 options:
   -h, --help            show this help message and exit
@@ -92,8 +92,8 @@ options:
   --entropy ENTROPY     whether you want to use entropy-loss. Default = False
   --load-weights LOAD_WEIGHTS
                         whether you want to load previous weights. Default = False
-  --run-on-colab RUN_ON_COLAB
-                        whether you are running it from colab. Default = False
+  --run-on-unix-like RUN_ON_UNIX_LIKE
+                        whether you are running it from a unix like system (e.g. linux, macos). Default = True
 ```
 
 ## Testing the agents 
@@ -106,7 +106,7 @@ python display_trained_agents.py --exp-name ppo_exp_1 --seed 42 --num-episodes 1
 
 You can specify the following options:
 ```
-usage: display_trained_agents.py [-h] [--exp-name EXP_NAME] [--seed SEED] [--num-episodes NUM_EPISODES] [--refresh-rate REFRESH_RATE]
+usage: display_trained_agents.py [-h] [--exp-name EXP_NAME] [--seed SEED] [--num-episodes NUM_EPISODES] [--refresh-rate REFRESH_RATE] [--run-on-unix-like RUN_ON_UNIX_LIKE]
 
 options:
   -h, --help            show this help message and exit
@@ -116,4 +116,6 @@ options:
                         number of episodes for which to compute the average reward. Default = 10.
   --refresh-rate REFRESH_RATE
                         refresh-rate for displaying the episode. Default = 250 (ms).
+  --run-on-unix-like RUN_ON_UNIX_LIKE
+                        whether you are running it from a unix like system (e.g. linux, macos). Default = True.
 ```
