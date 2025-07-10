@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--ppo-epsilon", type=float, default=0.05, help="epsilon for clipping in PPO.")
     parser.add_argument("--entropy", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to use entropy-loss")
     parser.add_argument("--load-weights", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you want to load previous weights")
-    parser.add_argument("--run-on-colab", type=lambda x: (str(x).lower() == "true"), default=False, help="whether you are running it from colab")
+    parser.add_argument("--run-on-unix-like", type=lambda x: (str(x).lower() == "true"), default=True, help="whether you are running it from a unix like system (e.g. linux, macos)")
 
     args = parser.parse_args()
 
@@ -58,7 +58,7 @@ def check_if_continue():
 def load_weights():
     """
     Load the weights of the neural networks if they exist.
-    If the weights do not exist, it will start from scratch.
+    If the weights do not exist, training will start from scratch.
     """
     global LOAD_WEIGHTS
     
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     SHARED_AGENT = args.shared_agent
     LOAD_WEIGHTS = args.load_weights
     ENTROPY = args.entropy
-    RUN_ON_COLAB = args.run_on_colab
+    RUN_ON_UNIX = args.run_on_unix_like
 
     # hyperparameters
     LR_CRITIC = args.lr_w
@@ -245,8 +245,8 @@ if __name__ == "__main__":
     PATH_SECOND_CRITIC = os.path.join("networks","second_critic", "second_critic_" + EXP_NAME + ".weights.h5")
     PATH_EXPERIMENT_INFO = os.path.join("info", EXP_NAME + ".json") 
 
-    if RUN_ON_COLAB:
-        sys.path.append('/content/overcooked_ai/src') # necessary to view the cloned repo.
+    if RUN_ON_UNIX:
+        sys.path.append('/content/overcooked_ai/src') # necessary to import the modules from the src folder 
 
     print("")
     print("EXPERIMENT INFO.")
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     print(f"Shared Agent: {SHARED_AGENT}")
     print(f"Loading previous weights: {LOAD_WEIGHTS}")
     print(f"Entropy Loss: {ENTROPY}")
-    print(f"Running on colab: {RUN_ON_COLAB}")
+    print(f"Running on unix-like system: {RUN_ON_UNIX}")
     print(f"Number of Episodes: {NUMBER_OF_EPISODES}")
     print(f"Number of Epochs: {NUMBER_OF_EPOCHS}")
     print(f"Batch Size: {BATCH_SIZE}")
@@ -440,16 +440,12 @@ if __name__ == "__main__":
             
             # computing expected values  
             critic_values = tf.squeeze(critic.call(observations))
-            # critic_new_values = tf.squeeze(critic.call(observations[1:])) # it represent the estimation of the next observation
-            critic_new_values = critic_values[1:]
-            critic_new_values = tf.concat([critic_new_values, tf.constant([0.0])], axis=0) # the last expected value is 0
+            critic_new_values = tf.concat([critic_values[1:], tf.constant([0.0])], axis=0) # the last expected value is 0
             
             if not SHARED_AGENT:
                 # if the critic is not shared, we compute the expected values also for the second agent
                 second_critic_values = tf.squeeze(second_critic.call(observations))
-                # second_critic_new_values = tf.squeeze(second_critic.call(observations[1:])) # it represent the estimation of the next observation
-                second_critic_new_values = second_critic_values[1:]
-                second_critic_new_values = tf.concat([second_critic_new_values, tf.constant([0.0])], axis=0) # the last one is 0
+                second_critic_new_values = tf.concat([second_critic_values[1:], tf.constant([0.0])], axis=0) # the last one is 0
                 
                 # stacking the critic values and new values for both agents in a (400,2) tensor
                 critic_values = tf.stack([critic_values,second_critic_values], axis=1)

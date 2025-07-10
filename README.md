@@ -14,9 +14,17 @@ The goal of the game is to deliver soups as fast as possible. Each soup requires
 
 This repo has been forked from [here](https://github.com/HumanCompatibleAI/overcooked_ai) to implement and test the effectiveness of Policy Gradient Methods with a custom implementation in Tensorflow Keras.
 
-## Installation ☑️
+## Code Structure Overview 🗺
 
-### Building from source 🔧
+The relevant files inside overcooked_ai/ for the project are:
+
+- `training.py`: main python file for training the agents
+- `display_trained_agents.py`: python file for testing out the agents and graphically display a game
+- `report.pdf`: pdf file describing the project work.
+- `info/`: folder containing .json files describing the experiment performed.
+- `networks/`: folder containing the weights of the neural networks for each experiment.
+
+## Getting started ☑️
 
 Clone the repo 
 ```
@@ -33,7 +41,7 @@ Install the dependencies
 uv sync
 ```
 
-Install tensorflow through **uv pip**(couldn't be possible to add it to the dependencies)
+Install tensorflow through **uv pip** (it couldn't be possible to add it to the dependencies)
 ```
 uv pip install tensorflow
 ```
@@ -42,16 +50,6 @@ Activate the virtual environment
 ```
 .venv\Scripts\activate
 ```
-
-## Code Structure Overview 🗺
-
-The relevant files inside overcooked_ai/ for the project are:
-
-- `training.py`: main python file for training the agents
-- `display_trained_agents.py`: python file for testing out the agents and graphically display a game
-- `report.pdf`: pdf file describing the project work.
-- `info/`: folder containing .json files describing the experiment performed.
-- `networks/`: folder containing the weights of the neural networks for each experiment.
 
 ## Training the agents 
 
@@ -103,7 +101,7 @@ options:
 To test your trained agents, you can run the following command:
 
 ```
-python display_trained_agents.py --exp-name ppo_exp_1 --seed 42 --num-episodes 10 
+python display_trained_agents.py --exp-name ppo_exp_1 --seed 42 --num-episodes 10 --refresh-rate 100
 ```
 
 You can specify the following options:

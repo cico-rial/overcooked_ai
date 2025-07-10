@@ -1,31 +1,14 @@
 from overcooked_ai_py.mdp.overcooked_env import OvercookedEnv, Overcooked
-from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld, OvercookedState
-from overcooked_ai_py.visualization.state_visualizer import StateVisualizer
+from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld
 from overcooked_ai_py.mdp.actions import Action
-from overcooked_ai_py.agents.agent import Agent, AgentPair, RandomAgent
-from overcooked_ai_py.agents.benchmarking import AgentEvaluator
-import numpy as np
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.datasets import mnist, fashion_mnist
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Conv2DTranspose, concatenate, BatchNormalization, Activation, Concatenate
-from tensorflow.keras.models import Model
-from scipy.stats import entropy
-from tqdm.notebook import tqdm
-from typing import Tuple, List, Dict
-import sys
-import argparse
-import json
-import time
-import pygame
-import os
-# import warnings
-# warnings.filterwarnings('ignore')
+from overcooked_ai_py.agents.agent import RandomAgent
 from utility.utility import set_seed_for_reproducibility, visualize_states, Policy, MyAgent
+import argparse
+import time
+import os
+import warnings
+import sys
+warnings.filterwarnings('ignore')
 
 def parse_args():
     """
@@ -40,6 +23,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="set the seed for reproducibility of the experiment")
     parser.add_argument("--num-episodes", type=int, default=10, help="number of episodes for which to compute the average reward")
     parser.add_argument("--refresh-rate", type=int, default=250, help="refresh-rate for displaying the episode")
+    parser.add_argument("--run-on-unix-like", type=lambda x: (str(x).lower() == "true"), default=True, help="whether you are running it from a unix like system (e.g. linux, macos)")
 
     args = parser.parse_args()
 
@@ -71,14 +55,19 @@ if __name__ == "__main__":
     NUMBER_OF_EPISODES = args.num_episodes
     REFRESH_RATE = args.refresh_rate
     SEED = args.seed
+    RUN_ON_UNIX = args.run_on_unix_like
 
-    PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5") 
+    PATH_ACTOR = os.path.join("networks", "actor", "actor_" + EXP_NAME + ".weights.h5")
+
+    if RUN_ON_UNIX:
+        sys.path.append('/content/overcooked_ai/src') # necessary to import the modules from the src folder 
 
     print("")
     print("EXPERIMENT INFO.")
     print(f"Experiment Name: {EXP_NAME}")
     print(f"Number of episodes: {NUMBER_OF_EPISODES}")
     print(f"Seed: {SEED}")
+    print(f"Running on unix-like system: {RUN_ON_UNIX}")
 
     print(f"Weights will be loaded from the following path:")
     print(f"Path actor: {PATH_ACTOR}")
@@ -222,7 +211,7 @@ if __name__ == "__main__":
                 f"soups delivered: {soup_delivery:>3d}. "
                 f"execution time: {round(end_episode - start_episode, 2)} seconds.")   
 
-        time.sleep(2) 
+        time.sleep(1) 
 
         print("")
         print(f"Average results in {NUMBER_OF_EPISODES} episodes:")

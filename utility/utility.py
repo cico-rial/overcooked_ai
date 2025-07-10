@@ -329,7 +329,6 @@ class ValueFunctionApproximator(Model):
         self.dense_3 = layers.Dense(64, activation='tanh')
         self.value_function = layers.Dense(1, name="value_function")
         self.build_model()
-        self.printt = True
 
     
     def preprocess(self, obs: Union[Tuple[np.array, np.array], tf.Tensor]) -> tf.Tensor:
@@ -476,6 +475,7 @@ class MyAgent(Agent):
             from the policy network. The dictionary contains the action probabilities.
         """
         if isinstance(obs, OvercookedState):
+            # featurize the OvercookedState state to get the observations for each agent
             state = obs
             obs_from_state = self.base_env.featurize_state_mdp(state)
             obs = (obs_from_state[0],obs_from_state[1])
