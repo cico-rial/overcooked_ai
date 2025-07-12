@@ -28,7 +28,7 @@ The relevant files inside overcooked_ai/ for the project are:
 
 Clone the repo 
 ```
-git clone https://github.com/cico/overcooked_ai.git
+git clone https://github.com/cico-rial/overcooked_ai.git
 ```
 
 Create venv using uv (necessary for compatibility)
@@ -81,9 +81,9 @@ options:
   --batch-size BATCH_SIZE
                         batch size of the training with SGD. Default = 20
   --prev-action PREV_ACTION
-                        number of actions prior to actual reward. Default = 5
+                        number of actions to reward prior to actual reward (rewarding a trajectory). Default = 5
   --delivery-reward DELIVERY_REWARD
-                        reward associated to soup delivery. Default = 5
+                        reward associated to soup (< 3 onions) delivery. Default = 5
   --gamma GAMMA         discount factor for rewards and future state value estimations. Default = 0.95
   --lr-w LR_W           learning rate for the critic. Default = 1e-5
   --lr-t LR_T           learning rate for the actor. Default = 1e-6
