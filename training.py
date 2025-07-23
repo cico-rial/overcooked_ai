@@ -437,22 +437,6 @@ if __name__ == "__main__":
                                 rewards[i] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
                             else:
                                 rewards[i][agent] += (GAMMA**(delivery_timestep-i))*DELIVERY_REWARD
-            
-            # computing expected values  
-            critic_values = tf.squeeze(critic.call(observations))
-            critic_new_values = tf.concat([critic_values[1:], tf.constant([0.0])], axis=0) # the last expected value is 0
-            
-            if not SHARED_AGENT:
-                # if the critic is not shared, we compute the expected values also for the second agent
-                second_critic_values = tf.squeeze(second_critic.call(observations))
-                second_critic_new_values = tf.concat([second_critic_values[1:], tf.constant([0.0])], axis=0) # the last one is 0
-                
-                # stacking the critic values and new values for both agents in a (400,2) tensor
-                critic_values = tf.stack([critic_values,second_critic_values], axis=1)
-                critic_new_values = tf.stack([critic_new_values,second_critic_new_values], axis=1)
-            
-            # computing the advantage function
-            deltas = rewards + GAMMA*critic_new_values - critic_values
 
             # computing the average episodic reward achieved so far
             epsiodes_so_far = len(experiment_info["avg_reward_list"])
@@ -486,11 +470,23 @@ if __name__ == "__main__":
                     else:
                         idx = shuffled_indices[batch*BATCH_SIZE:(batch+1)*BATCH_SIZE]
 
-                    deltas_batch = tf.gather(deltas, idx)
-                    rewards_batch = tf.gather(tf.constant(rewards, dtype=float), idx)
-                    actions_batch = tf.gather(actions, idx)
                     observations_batch = tf.gather(observations, idx)
                     new_observations_batch = tf.gather(new_observations, idx)
+                    critic_values_batch = tf.squeeze(critic.call(observations_batch))
+                    critic_new_values_batch = tf.squeeze(critic.call(new_observations_batch))
+
+                    if not SHARED_AGENT:
+                        # if the critic is not shared, we compute the expected values also for the second agent
+                        second_critic_values_batch = tf.squeeze(second_critic.call(observations_batch))
+                        second_critic_new_values_batch = tf.squeeze(second_critic.call(new_observations_batch))
+                        # stacking the critic values and new values for both agents in a (400,2) tensor
+                        critic_values_batch = tf.stack([critic_values_batch,second_critic_values_batch], axis=1)
+                        critic_new_values_batch = tf.stack([critic_new_values_batch,second_critic_new_values_batch], axis=1)
+
+                    rewards_batch = tf.gather(tf.constant(rewards, dtype=float), idx)
+                    # deltas_batch = tf.gather(deltas, idx)
+                    deltas_batch = rewards_batch + GAMMA*critic_new_values_batch - critic_values_batch
+                    actions_batch = tf.gather(actions, idx)
 
                     if ALGORITHM == 'ac':
                         # training the critic(s)
